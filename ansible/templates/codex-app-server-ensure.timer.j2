@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodically ensure Codex app-server daemon is running
+
+[Timer]
+OnBootSec=60s
+OnUnitActiveSec=300s
+Unit=codex-app-server-ensure.service
+Persistent=true
+
+[Install]
+WantedBy=timers.target

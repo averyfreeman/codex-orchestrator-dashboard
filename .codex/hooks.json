@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 scripts/gitbbq-auto-publish.py",
+            "timeout": 600
+          }
+        ]
+      }
+    ]
+  }
+}

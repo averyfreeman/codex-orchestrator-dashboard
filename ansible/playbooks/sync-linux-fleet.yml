@@ -1,0 +1,196 @@
+---
+- name: Configure the Linux Codex fleet
+  hosts: linux_fleet
+  gather_facts: true
+
+  tasks:
+    - name: Check user-level tool installation paths
+      ansible.builtin.stat:
+        path: "{{ ansible_facts['env']['HOME'] }}/.local/bin/{{ item }}"
+      loop:
+        - codex
+        - herdr
+        - treehouse
+      register: fleet_tools
+
+    - name: Install Codex CLI for an unconfigured host
+      ansible.builtin.shell: "curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh"
+      args:
+        creates: "{{ ansible_facts['env']['HOME'] }}/.local/bin/codex"
+      when: not fleet_tools.results[0].stat.exists
+
+    - name: Install Herdr with the checksum-verifying official installer
+      ansible.builtin.shell: "curl -fsSL https://herdr.dev/install.sh | sh"
+      args:
+        creates: "{{ ansible_facts['env']['HOME'] }}/.local/bin/herdr"
+      when: not fleet_tools.results[1].stat.exists
+
+    - name: Install Treehouse for this user
+      ansible.builtin.shell: "curl -fsSL https://kunchenguid.github.io/treehouse/install.sh | PATH={{ ansible_facts['env']['HOME'] }}/.local/bin:$PATH sh"
+      args:
+        creates: "{{ ansible_facts['env']['HOME'] }}/.local/bin/treehouse"
+      when: not fleet_tools.results[2].stat.exists
+
+    - name: Create private fleet profile staging directory
+      ansible.builtin.file:
+        path: "{{ ansible_facts['env']['HOME'] }}/.local/share/codex-fleet"
+        state: directory
+        owner: "{{ ansible_facts['user_id'] }}"
+        mode: "0700"
+
+    - name: Stage profile synchronization helper
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../scripts/sync_codex_profile.py"
+        dest: "{{ ansible_facts['env']['HOME'] }}/.local/share/codex-fleet/sync_codex_profile.py"
+        owner: "{{ ansible_facts['user_id'] }}"
+        mode: "0700"
+
+    - name: Stage shared Codex defaults
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../config/codex-fleet-profile.json"
+        dest: "{{ ansible_facts['env']['HOME'] }}/.local/share/codex-fleet/profile.json"
+        owner: "{{ ansible_facts['user_id'] }}"
+        mode: "0600"
+
+    - name: Apply shared defaults and preserve other machine-specific Codex config
+      ansible.builtin.command:
+        argv:
+          - python3
+          - "{{ ansible_facts['env']['HOME'] }}/.local/share/codex-fleet/sync_codex_profile.py"
+          - --config
+          - "{{ ansible_facts['env']['HOME'] }}/.codex/config.toml"
+          - --profile
+          - "{{ ansible_facts['env']['HOME'] }}/.local/share/codex-fleet/profile.json"
+          - --write
+      register: profile_sync
+      changed_when: "'Updated Codex fleet profile' in profile_sync.stdout"
+
+    - name: Read current Codex Remote Control setting without exposing config contents
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - "import json,pathlib; p=pathlib.Path.home()/'.codex/app-server-daemon/settings.json'; print(str(json.loads(p.read_text()).get('remoteControlEnabled',False)).lower() if p.exists() else 'false')"
+      register: remote_control_enabled
+      changed_when: false
+
+    - name: Bootstrap Codex Remote Control when not already enabled
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_env.HOME }}/.local/bin/codex"
+          - app-server
+          - daemon
+          - bootstrap
+          - --remote-control
+      when: remote_control_enabled.stdout != "true"
+
+    - name: Check whether user services need login lingering
+      ansible.builtin.command:
+        argv:
+          - loginctl
+          - show-user
+          - "{{ ansible_facts['user_id'] }}"
+          - -p
+          - Linger
+      register: user_linger
+      changed_when: false
+
+    - name: Enable user services after reboot
+      ansible.builtin.command:
+        argv:
+          - loginctl
+          - enable-linger
+          - "{{ ansible_facts['user_id'] }}"
+      become: true
+      when: "'Linger=yes' not in user_linger.stdout"
+
+    - name: Ensure the user systemd directory exists
+      ansible.builtin.file:
+        path: "{{ ansible_facts['env']['HOME'] }}/.config/systemd/user"
+        state: directory
+        owner: "{{ ansible_facts['user_id'] }}"
+        mode: "0700"
+
+    - name: Install Codex app-server startup units
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/{{ item }}"
+        dest: "{{ ansible_facts['env']['HOME'] }}/.config/systemd/user/{{ item | regex_replace('\\.j2$', '') }}"
+        owner: "{{ ansible_facts['user_id'] }}"
+        mode: "0644"
+      loop:
+        - codex-app-server.service.j2
+        - codex-app-server-ensure.service.j2
+        - codex-app-server-ensure.timer.j2
+        - herdr-server.service.j2
+      register: unit_files
+
+    - name: Read numeric user id for the user systemd manager
+      ansible.builtin.command:
+        argv: [id, -u]
+      register: user_uid
+      changed_when: false
+
+    - name: Reload the user systemd manager
+      ansible.builtin.command: systemctl --user daemon-reload
+      environment:
+        XDG_RUNTIME_DIR: "/run/user/{{ user_uid.stdout }}"
+      changed_when: false
+
+    - name: Read Herdr server status without starting it
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_facts['env']['HOME'] }}/.local/bin/herdr"
+          - status
+          - server
+          - --json
+      register: herdr_server_status
+      changed_when: false
+
+    - name: Read Herdr unit state
+      ansible.builtin.command: systemctl --user is-active herdr-server.service
+      environment:
+        XDG_RUNTIME_DIR: "/run/user/{{ user_uid.stdout }}"
+      register: herdr_unit_state
+      failed_when: false
+      changed_when: false
+
+    - name: Stop only a duplicate Herdr restart loop when a separate server is already running
+      ansible.builtin.systemd_service:
+        name: herdr-server.service
+        scope: user
+        enabled: true
+        state: stopped
+      environment:
+        XDG_RUNTIME_DIR: "/run/user/{{ user_uid.stdout }}"
+      when:
+        - (herdr_server_status.stdout | from_json).status == "running"
+        - herdr_unit_state.stdout != "active"
+
+    - name: Enable and start the Codex daemon and ensure timer
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        scope: user
+        enabled: true
+        state: started
+      environment:
+        XDG_RUNTIME_DIR: "/run/user/{{ user_uid.stdout }}"
+      loop:
+        - codex-app-server.service
+        - codex-app-server-ensure.timer
+
+    - name: Enable the Herdr service for the next user-manager start
+      ansible.builtin.systemd_service:
+        name: herdr-server.service
+        scope: user
+        enabled: true
+      environment:
+        XDG_RUNTIME_DIR: "/run/user/{{ user_uid.stdout }}"
+
+    - name: Start Herdr only when no server already owns its socket
+      ansible.builtin.systemd_service:
+        name: herdr-server.service
+        scope: user
+        state: started
+      environment:
+        XDG_RUNTIME_DIR: "/run/user/{{ user_uid.stdout }}"
+      when: (herdr_server_status.stdout | from_json).status != "running"

@@ -1,0 +1,18 @@
+[Unit]
+Description=Codex app-server daemon (user)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=CODEX_HOME={{ ansible_facts['env']['HOME'] }}/.codex
+Environment=PATH={{ ansible_facts['env']['HOME'] }}/.local/bin:/usr/local/bin:/usr/bin:/bin
+WorkingDirectory={{ ansible_facts['env']['HOME'] }}
+ExecStart={{ ansible_facts['env']['HOME'] }}/.local/bin/codex app-server daemon start
+ExecStop={{ ansible_facts['env']['HOME'] }}/.local/bin/codex app-server daemon stop
+TimeoutStartSec=120
+TimeoutStopSec=120
+
+[Install]
+WantedBy=default.target
