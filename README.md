@@ -40,6 +40,8 @@ Routes are tried in listed order; use ZeroTier first and Tailscale as failover. 
 
 The current application is an observation dashboard. Interactive control is designed around the selected host’s Codex app-server for Codex threads and turns, and Herdr’s named-session interface for Herdr sessions. OpenClaw is an explicit delegation option; it is not the default path. The dashboard does not expose arbitrary SSH, service-manager controls, or Codex daemon restarts.
 
+Explore the [three Host Console layout prototypes](https://github.com/averyfreeman/codex-orchestrator-dashboard/tree/prototype/host-console/src/app/prototype). They demonstrate the selected-host Codex conversation, Herdr named-session controls, explicit OpenClaw delegation, and a per-profile network switch that starts on. The prototype keeps actions in local UI state; it is not wired to remote app-servers.
+
 Dashboard-managed Codex profiles are a separate policy from the shared fleet sync profile in `config/codex-fleet-profile.json`. The managed-profile design uses `approval_policy = "never"`, a `workspace-write` sandbox with the host’s `$HOME` as its writable root, and network access enabled by default. Its per-profile dashboard switch is designed to turn command networking and live web search off together for subsequent turns. It does not edit unrelated local Codex profiles. Treat this as a high-trust profile: while enabled, commands can access the network and write anywhere under the selected user’s home directory.
 
 ## Telemetry and retention
