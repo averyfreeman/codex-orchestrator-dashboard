@@ -1,6 +1,7 @@
 import { connection, NextRequest, NextResponse } from "next/server";
 import { appendEvent, isLogEvent, readRecentEvents } from "@/lib/logging";
 
+/** Return the bounded recent window of private local telemetry events. */
 export async function GET() {
   await connection();
   return NextResponse.json({ events: await readRecentEvents() }, {
@@ -8,6 +9,7 @@ export async function GET() {
   });
 }
 
+/** Validate and append one bounded event using the configured bearer token. */
 export async function POST(request: NextRequest) {
   const token = process.env.LOG_INGEST_TOKEN;
   if (!token) return NextResponse.json({ error: "Log ingestion is not configured" }, { status: 503 });

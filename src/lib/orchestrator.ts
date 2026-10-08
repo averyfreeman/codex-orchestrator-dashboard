@@ -1,3 +1,4 @@
+/** Sanitized gateway and aggregate agent-session status for the read-only view. */
 export type OpenClawReport = {
   status: "available" | "unavailable";
   gateway: {
@@ -16,6 +17,7 @@ function record(value: unknown): Record<string, unknown> {
     : {};
 }
 
+/** Project an OpenClaw status payload into the dashboard's bounded public shape. */
 export function sanitizeOpenClawStatus(value: unknown): OpenClawReport {
   const root = record(value);
   const gateway = record(root.gateway);

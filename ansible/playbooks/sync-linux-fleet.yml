@@ -37,6 +37,7 @@
         state: directory
         owner: "{{ ansible_facts['user_id'] }}"
         mode: "0700"
+      tags: [codex_profile]
 
     - name: Stage profile synchronization helper
       ansible.builtin.copy:
@@ -44,6 +45,7 @@
         dest: "{{ ansible_facts['env']['HOME'] }}/.local/share/codex-fleet/sync_codex_profile.py"
         owner: "{{ ansible_facts['user_id'] }}"
         mode: "0700"
+      tags: [codex_profile]
 
     - name: Stage shared Codex defaults
       ansible.builtin.copy:
@@ -51,6 +53,7 @@
         dest: "{{ ansible_facts['env']['HOME'] }}/.local/share/codex-fleet/profile.json"
         owner: "{{ ansible_facts['user_id'] }}"
         mode: "0600"
+      tags: [codex_profile]
 
     - name: Apply shared defaults and preserve other machine-specific Codex config
       ansible.builtin.command:
@@ -61,9 +64,12 @@
           - "{{ ansible_facts['env']['HOME'] }}/.codex/config.toml"
           - --profile
           - "{{ ansible_facts['env']['HOME'] }}/.local/share/codex-fleet/profile.json"
+          - --home
+          - "{{ ansible_facts['env']['HOME'] }}"
           - --write
       register: profile_sync
       changed_when: "'Updated Codex fleet profile' in profile_sync.stdout"
+      tags: [codex_profile]
 
     - name: Read current Codex Remote Control setting without exposing config contents
       ansible.builtin.command:

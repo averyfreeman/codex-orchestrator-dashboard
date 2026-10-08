@@ -2,6 +2,7 @@ import { appendFile, chmod, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { HostReport } from "@/lib/hosts";
 
+/** Bounded event metadata persisted to the private JSONL telemetry file. */
 export type LogEvent = {
   at?: string;
   source: string;
@@ -10,6 +11,7 @@ export type LogEvent = {
   stats?: Record<string, unknown>;
 };
 
+/** Validate the public event envelope before writing an ingested event. */
 export function isLogEvent(value: unknown): value is LogEvent {
   if (!value || typeof value !== "object") return false;
   const event = value as Record<string, unknown>;
@@ -23,6 +25,7 @@ export function isLogEvent(value: unknown): value is LogEvent {
 
 const logPath = () => path.join(process.cwd(), "logs", "events.jsonl");
 
+/** Append one event with an owner-only file and directory mode. */
 export async function appendEvent(event: LogEvent) {
   const file = logPath();
   await mkdir(path.dirname(file), { recursive: true });
@@ -32,6 +35,7 @@ export async function appendEvent(event: LogEvent) {
   await chmod(file, 0o600);
 }
 
+/** Project host reports into a content-free fleet snapshot and persist it. */
 export async function appendSnapshot(reports: HostReport[]) {
   await appendEvent({
     source: "dashboard",
@@ -54,6 +58,7 @@ export async function appendSnapshot(reports: HostReport[]) {
   });
 }
 
+/** Read the newest bounded events, returning an empty list when no log exists. */
 export async function readRecentEvents(limit = 100) {
   try {
     const body = await readFile(logPath(), "utf8");

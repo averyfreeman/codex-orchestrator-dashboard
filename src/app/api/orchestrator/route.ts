@@ -5,6 +5,7 @@ import { sanitizeOpenClawStatus } from "@/lib/orchestrator";
 
 const execFileAsync = promisify(execFile);
 
+/** Return a sanitized projection of local OpenClaw gateway status. */
 export async function GET() {
   try {
     const result = await execFileAsync(

@@ -1,6 +1,11 @@
 {
   "model": "gpt-6-luna",
   "model_reasoning_effort": "max",
-  "approval_policy": "on-request",
-  "sandbox_mode": "workspace-write"
+  "approval_policy": "never",
+  "sandbox_mode": "workspace-write",
+  "web_search": "live",
+  "sandbox_workspace_write": {
+    "network_access": true,
+    "writable_roots": ["$HOME"]
+  }
 }

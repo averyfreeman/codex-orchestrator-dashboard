@@ -1,20 +1,32 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
+/** One allowlisted local or SSH-reachable machine in the private fleet inventory. */
 export type HostDefinition = {
+  /** Stable, URL-safe key used by control requests. */
   slug: string;
+  /** Human-readable dashboard label. */
   name: string;
+  /** Display-only operating system label. */
   os: string;
+  /** Optional LAN address shown in the UI; never used as an SSH route. */
   localIp: string | null;
+  /** Optional Tailscale address shown in the UI. */
   tailscaleIp: string | null;
+  /** Optional ZeroTier address shown in the UI. */
   zerotierIp: string | null;
+  /** Strict SSH routes tried in order, normally ZeroTier before Tailscale. */
   sshRoutes?: SshRoute[];
+  /** Marks the gateway host so the collector probes it without SSH. */
   local?: boolean;
 };
 
+/** Supported overlay transports for SSH routes. */
 export type SshTransport = "zerotier" | "tailscale";
+/** Selected transport reported by a local, remote, or failed probe. */
 export type ConnectionTransport = SshTransport | "local" | "unavailable";
 
+/** One strict SSH destination and its stable known-hosts alias. */
 export type SshRoute = {
   transport: SshTransport;
   target: string;
@@ -60,8 +72,10 @@ function isSshRoute(value: unknown): value is SshRoute {
     typeof route.target === "string" && typeof route.hostKeyAlias === "string";
 }
 
+/** Hosts validated from the private inventory, or an empty list on invalid input. */
 export const HOSTS = loadHosts();
 
+/** CPU, memory, elapsed time, and command metadata for one observed process. */
 export type ProcessInfo = {
   pid: number;
   cpuPercent: number;
@@ -71,6 +85,7 @@ export type ProcessInfo = {
   command: string;
 };
 
+/** Bounded Herdr agent metadata associated with a host. */
 export type AgentInfo = {
   id: string;
   name: string;
@@ -78,12 +93,14 @@ export type AgentInfo = {
   pid: number | null;
 };
 
+/** A registered Treehouse worktree discovered from local state metadata. */
 export type WorktreeInfo = {
   name: string;
   path: string;
   createdAt: string | null;
 };
 
+/** Sanitized observation result for one configured host. */
 export type HostReport = {
   host: HostDefinition;
   checkedAt: string;
@@ -114,6 +131,7 @@ export type HostReport = {
   error: string | null;
 };
 
+/** Build the consistent unavailable-state report used when a probe cannot respond. */
 export function unavailableReport(
   host: HostDefinition,
   checkedAt = new Date().toISOString(),

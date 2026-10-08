@@ -1,10 +1,10 @@
 # Interactive control and telemetry options
 
-**Status:** Architecture research for the dashboard; no implementation change. Sources below are upstream product documentation, protocol specifications, or source schemas, reviewed 2026-10-07.
+**Status:** Architecture research for the dashboard. Codex thread/turn control and Herdr named-session lifecycle controls use loopback APIs; Herdr event subscription/recovery and OpenClaw delegation remain future work. Sources below are upstream product documentation, protocol specifications, or source schemas, reviewed 2026-10-07.
 
 ## Recommendation
 
-Add an authenticated control plane behind the existing dashboard API. The browser selects a host and an existing/new Codex thread, then the dashboard backend connects to that host’s Codex app-server, starts or steers a turn, and streams the app-server’s events back to the browser. Make chat host-scoped by default; require a separate, explicit route when the operator wants OpenClaw to handle a task.
+Keep the loopback-only control plane behind the dashboard API until user authentication and CSRF protection are implemented for remote exposure. The browser selects a host and an existing/new Codex thread, then the dashboard backend connects to that host’s Codex app-server, starts or steers a turn, and streams the app-server’s events back to the browser. Make chat host-scoped by default; require a separate, explicit route when the operator wants OpenClaw to handle a task.
 
 Use the native Codex app-server protocol for Codex work, and Herdr’s own session interface for Herdr lifecycle controls. A2A and ACP solve other integration problems; neither is a better replacement for direct control of these existing runtimes.
 
@@ -63,9 +63,9 @@ For OpenClaw delegation, make the destination and consequence explicit in the co
 
 ## Rollout and limits
 
-1. Start with Codex thread/turn start, streaming state, interrupt, and per-turn usage; keep the selected host visible throughout.
-2. Add Herdr named-session start/stop and event-driven state with snapshot recovery.
-3. Add host health probes with staggered intervals and output/timeout limits.
+1. Codex thread/turn start, streaming state, interrupt, and per-turn usage are implemented; keep the selected host visible throughout.
+2. Herdr named-session listing/start/stop is implemented; add event-driven state with snapshot recovery.
+3. Keep host health probes bounded and staggered with output/timeout limits.
 4. Add explicit OpenClaw delegation only behind a separate route and honest cancellation/status semantics.
 5. Benchmark resource use under idle monitoring and one representative active turn/session. Track gateway RSS/CPU, remote collector RSS/CPU, probe duration, event volume, and actual agent token usage.
 

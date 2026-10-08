@@ -1,13 +1,15 @@
-# Dashboard-managed Codex profiles carry explicit permissions
+# Codex defaults and dashboard-managed permissions are explicit
 
 ## Context
 
-Dashboard-initiated work needs predictable permissions without changing every local Codex configuration or the conservative shared fleet sync profile. The operator chose auto-approval, a `$HOME` writable root, and network access for dashboard-managed profiles, while keeping profiles separately controllable.
+The operator requested permissive Codex defaults on local machines and dashboard-initiated work, with `$HOME` as the write boundary, command/web access enabled by default, and a dashboard switch to disable networking for subsequent turns.
 
 ## Decision
 
-Create dashboard-managed profiles with `approval_policy = "never"`, `sandbox_mode = "workspace-write"`, and the selected host user’s home directory as the writable root. Enable command networking and live web search by default. Provide one per-profile network switch that turns both settings off or on for subsequent turns. Keep this policy scoped to dashboard-managed profiles; do not change unrelated local or shared fleet profiles.
+Set the shared Codex user defaults to `model = "gpt-6-luna"`, maximum reasoning effort, `approval_policy = "never"`, `sandbox_mode = "workspace-write"`, the current user's home directory as an additional writable root, command networking enabled, and `web_search = "live"`. Apply these values through the profile synchronizer on Maccauley and the configured Linux fleet. Preserve authentication, MCP/plugin configuration, and other machine-specific settings.
+
+Dashboard-initiated turns use the same sandbox boundary and approval policy through request-scoped app-server settings. A dashboard-managed network switch starts on and controls both sandbox command networking and live web search for later turns without editing the user's config file.
 
 ## Consequences
 
-The profile reduces interruptions while retaining the configured sandbox. With networking enabled, tools can reach external services and write anywhere under that host user’s home directory. A switch change cannot retract a request already in flight. The UI must show the selected host and profile, record policy changes, and explain that browser, connector, MCP, and model traffic use separate controls. The shared fleet profile remains unchanged.
+The defaults reduce interruptions while retaining the configured sandbox. With networking enabled, sandboxed tools can reach external services and write anywhere under that host user's home directory. `approval_policy = "never"` does not turn off independent browser, connector, or operating-system permissions. The dashboard bridge grants only filesystem paths under `$HOME` and requested sandbox networking; it declines out-of-scope access and unsupported elicitation requests. A network switch change affects subsequent turns and cannot retract a request already in flight.

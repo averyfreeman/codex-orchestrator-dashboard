@@ -33,6 +33,7 @@ AGENT_NAMES = tuple(AGENTS)
 
 
 def render_agent(name: str, home: Path, codex_bin: str, herdr_bin: str, label: str | None = None) -> dict[str, Any]:
+    """Render one LaunchAgent template into a plist mapping for a user."""
     spec = AGENTS[name]
     template_path = TEMPLATE_DIR / spec["template"]
     template = template_path.read_text(encoding="utf-8")
@@ -114,6 +115,7 @@ def backup(path: Path) -> Path:
 
 
 def ensure_agents(*, install: bool) -> int:
+    """Verify both user LaunchAgents or install and bootstrap them explicitly."""
     if sys.platform != "darwin":
         print("This installer only runs on macOS.", file=sys.stderr)
         return 2
@@ -183,6 +185,7 @@ def ensure_agents(*, install: bool) -> int:
 
 
 def main() -> int:
+    """Run the macOS installer in check-only or explicit install mode."""
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--install", action="store_true", help="install missing agents and bootstrap unloaded jobs")

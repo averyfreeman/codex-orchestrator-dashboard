@@ -10,4 +10,4 @@ Use the selected host’s Codex app-server protocol for Codex thread/turn start,
 
 ## Consequences
 
-The dashboard can present native thread and turn state and can interrupt a specific turn. The selected host and profile remain visible for each operation. Loss of a browser or SSH connection is reconciled from runtime state rather than treated as cancellation. Arbitrary SSH, host service controls, and Codex daemon restarts remain outside the control interface. OpenClaw cancellation is reported only when its selected interface confirms it.
+The dashboard can present native thread and turn state and can interrupt a specific turn. The selected host and profile remain visible for each operation. Loss of a browser or SSH connection is reconciled from runtime state rather than treated as cancellation. Recovery is limited to one fixed Codex daemon `start` action after a fresh probe confirms the daemon is down. The dashboard does not restart a responding daemon, expose arbitrary SSH, or provide service-manager controls. OpenClaw cancellation is reported only when its selected interface confirms it.

@@ -60,6 +60,7 @@ def findings(path: Path, content: str) -> list[str]:
 
 
 def main() -> int:
+    """Scan tracked and non-ignored files for common private publication data."""
     root = Path(__file__).resolve().parents[1]
     failed = False
     for path in public_files(root):

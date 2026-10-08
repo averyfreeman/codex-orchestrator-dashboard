@@ -1,3 +1,9 @@
+"""Emit bounded, content-free host metadata for the dashboard collector.
+
+The collector executes this source on the gateway or over strict SSH and parses
+one JSON report from stdout. Probe failures are represented in the report.
+"""
+
 import base64
 import glob
 import getpass
@@ -13,6 +19,7 @@ import time
 HOME = pathlib.Path.home()
 
 def run(args, timeout=8):
+    """Run one bounded host command and return stdout, stderr, and exit status."""
     try:
         result = subprocess.run(args, capture_output=True, text=True, timeout=timeout, check=False)
         return result.stdout.strip(), result.stderr.strip(), result.returncode
@@ -20,12 +27,14 @@ def run(args, timeout=8):
         return "", str(exc), 1
 
 def first_executable(paths):
+    """Return the first executable candidate path, or ``None`` when absent."""
     for value in paths:
         if pathlib.Path(value).is_file() and os.access(value, os.X_OK):
             return value
     return None
 
 def launchd_job_loaded(suffix):
+    """Check whether a loaded GUI LaunchAgent label ends with ``suffix``."""
     out, _, code = run(["launchctl", "list"])
     if code != 0:
         return False
@@ -77,6 +86,7 @@ if codex:
                     pass
 
 def rpc_status(codex_path):
+    """Read content-free app-server daemon status through its local proxy."""
     socket_path = HOME / ".codex/app-server-control/app-server-control.sock"
     proc = subprocess.Popen([codex_path, "app-server", "proxy", "--sock", str(socket_path)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0)
     buffer = bytearray()
@@ -263,6 +273,7 @@ for state_file in glob.glob(str(HOME / ".treehouse/**/treehouse-state.json"), re
         pass
 
 def network_info():
+    """Report local, Tailscale, and ZeroTier addresses when discoverable."""
     result = {"localIp": None, "tailscaleIp": None, "zerotierIp": None}
     if platform.system() == "Darwin":
         out, _, code = run(["ipconfig", "getifaddr", "en0"])

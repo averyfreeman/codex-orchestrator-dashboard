@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { HostReport } from "@/lib/hosts";
 import type { OpenClawReport } from "@/lib/orchestrator";
+import { ControlPanel } from "./control-panel";
+import { HerdrSessionsPanel } from "./herdr-sessions-panel";
 
-type View = "app-server" | "herdr" | "treehouse" | "orchestrator";
+type View = "app-server" | "herdr" | "treehouse" | "orchestrator" | "control";
 type LogItem = { at: string; source: string; host: string; type: string; stats?: Record<string, unknown> };
 
 function timeAgo(value?: string) {
@@ -23,7 +25,7 @@ function Health({ online, label }: { online: boolean; label: string }) {
   return <span className={`health ${online ? "healthy" : "offline"}`}><i />{label}</span>;
 }
 
-function HostCard({ report }: { report: HostReport }) {
+function HostCard({ report, recovering, onRecover }: { report: HostReport; recovering: boolean; onRecover: () => void }) {
   const online = report.reachable;
   return (
     <article className={`host-card ${online ? "" : "host-card-offline"}`}>
@@ -42,6 +44,7 @@ function HostCard({ report }: { report: HostReport }) {
         <span className="minor">RC {report.appServer.remoteControlEnabled === null ? "unknown" : report.appServer.remoteControlEnabled ? "enabled" : "off"} · {report.appServer.remoteControlRuntime}</span>
         <span className="minor">{report.appServer.loadedThreads === null ? "threads —" : `${report.appServer.loadedThreads} loaded`}</span>
         <span className="minor transport-note">Via {report.connection.transport === "unavailable" ? "—" : report.connection.transport === "local" ? "Local" : report.connection.transport === "zerotier" ? "ZeroTier" : "Tailscale"}</span>
+        {!online && <button type="button" className="recovery-button" disabled={recovering} onClick={onRecover}>{recovering ? "Starting…" : "Start daemon"}</button>}
       </div>
       {report.error && <p className="host-error">{report.error}</p>}
     </article>
@@ -85,6 +88,7 @@ function OpenClawPanel({ report }: { report: OpenClawReport | null }) {
   );
 }
 
+/** Render the polling fleet overview and switchable operational views. */
 export default function Home() {
   const [view, setView] = useState<View>("app-server");
   const [hosts, setHosts] = useState<HostReport[]>([]);
@@ -92,6 +96,7 @@ export default function Home() {
   const [openClaw, setOpenClaw] = useState<OpenClawReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [recoveringHost, setRecoveringHost] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [lastChecked, setLastChecked] = useState<string>();
   const [notice, setNotice] = useState("");
@@ -128,6 +133,31 @@ export default function Home() {
     return () => { window.clearTimeout(initial); window.clearInterval(timer); };
   }, [refresh]);
 
+  async function recoverCodex(host: HostReport["host"]) {
+    if (recoveringHost) return;
+    let statusRefreshPending = false;
+    setRecoveringHost(host.slug);
+    setNotice("");
+    try {
+      const response = await fetch("/api/control/codex/recover", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ host: host.slug }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Could not start the Codex daemon.");
+      setNotice(`${host.name}: ${result.message ?? "Codex daemon start requested."} Checking fleet status shortly.`);
+      statusRefreshPending = true;
+      window.setTimeout(() => {
+        void refresh(true).finally(() => setRecoveringHost(null));
+      }, 2_000);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Codex daemon recovery failed.");
+    } finally {
+      if (!statusRefreshPending) setRecoveringHost(null);
+    }
+  }
+
   const counts = useMemo(() => ({
     online: hosts.filter((host) => host.reachable).length,
     agents: hosts.reduce((sum, host) => sum + host.herdr.agents.length, 0),
@@ -140,7 +170,7 @@ export default function Home() {
     return hosts.filter((report) => [report.host.name, report.host.os, report.host.localIp, report.host.tailscaleIp, report.host.zerotierIp].join(" ").toLowerCase().includes(q));
   }, [hosts, query]);
 
-  const viewLabel = view === "app-server" ? "App-server fleet" : view === "herdr" ? "Herdr sessions" : view === "treehouse" ? "Treehouse worktrees" : "OpenClaw gateway";
+  const viewLabel = view === "app-server" ? "App-server fleet" : view === "herdr" ? "Herdr sessions" : view === "treehouse" ? "Treehouse worktrees" : view === "orchestrator" ? "OpenClaw gateway" : "Interactive control";
 
   return (
     <main className="app-shell">
@@ -154,6 +184,7 @@ export default function Home() {
           <button className={view === "herdr" ? "selected" : ""} onClick={() => setView("herdr")}><span className="nav-icon">▦</span> Herdr sessions <b>{counts.agents}</b></button>
           <button className={view === "treehouse" ? "selected" : ""} onClick={() => setView("treehouse")}><span className="nav-icon">⌘</span> Treehouse <b>{counts.worktrees}</b></button>
           <button className={view === "orchestrator" ? "selected" : ""} onClick={() => setView("orchestrator")}><span className="nav-icon">◎</span> OpenClaw <b>{openClaw?.totalSessions ?? "—"}</b></button>
+          <button className={view === "control" ? "selected" : ""} onClick={() => setView("control")}><span className="nav-icon">✳</span> Control <b>Codex</b></button>
         </nav>
         <div className="sidebar-spacer" />
         <div className="sidebar-foot"><span className="pulse-dot" /> Polling every 30 sec <small>ZeroTier first · Tailscale fallback</small></div>
@@ -177,6 +208,7 @@ export default function Home() {
             <button role="tab" aria-selected={view === "herdr"} className={view === "herdr" ? "active" : ""} onClick={() => setView("herdr")}>Herdr</button>
             <button role="tab" aria-selected={view === "treehouse"} className={view === "treehouse" ? "active" : ""} onClick={() => setView("treehouse")}>Treehouse / worktrees</button>
             <button role="tab" aria-selected={view === "orchestrator"} className={view === "orchestrator" ? "active" : ""} onClick={() => setView("orchestrator")}>OpenClaw</button>
+            <button role="tab" aria-selected={view === "control"} className={view === "control" ? "active" : ""} onClick={() => setView("control")}>Interactive control</button>
           </div><label className="search-box"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter hosts" aria-label="Filter hosts" /><kbd>⌘ K</kbd></label></div>
 
           {notice && <div className="notice" role="status"><span>ⓘ</span>{notice}<button onClick={() => setNotice("")} aria-label="Dismiss notice">×</button></div>}
@@ -184,15 +216,15 @@ export default function Home() {
 
           {view === "app-server" && <section className="view-panel" aria-label="App-server hosts">
             <div className="panel-heading"><div><h2>Machines</h2><p>Daemon health, Remote Control configuration, and address paths.</p></div><span className="panel-count">{visibleHosts.length} HOSTS</span></div>
-            <div className="host-grid">{visibleHosts.map((report) => <HostCard key={report.host.slug} report={report} />)}</div>
+            <div className="host-grid">{visibleHosts.map((report) => <HostCard key={report.host.slug} report={report} recovering={recoveringHost === report.host.slug} onRecover={() => void recoverCodex(report.host)} />)}</div>
             <div className="table-note"><span className="info-mark">i</span> “Responding” means the managed app-server control socket answered. SSH tries ZeroTier first, then Tailscale, with strict host-key checking on both paths. Remote Control runtime and loaded-thread count come from read-only status/list RPCs; no conversation content is read.</div>
           </section>}
 
-          {view === "herdr" && <section className="view-panel" aria-label="Herdr sessions">
+          {view === "herdr" && <><HerdrSessionsPanel hosts={hosts.map(({ host, connection }) => ({ host, connection }))} /><section className="view-panel" aria-label="Herdr sessions">
             <div className="panel-heading"><div><h2>Herdr machines &amp; agents</h2><p>Persistent terminal sessions and agent metadata reported by each Herdr server.</p></div><span className="panel-count">{counts.agents} AGENTS</span></div>
             <div className="agent-table-wrap"><table><thead><tr><th>MACHINE</th><th>SERVER</th><th>WORKSPACES</th><th>AGENTS</th><th>DAEMON PID / USAGE</th></tr></thead><tbody>{visibleHosts.map((report) => <tr key={report.host.slug}><td><div className="machine-cell"><span className={`tiny-status ${report.herdr.status === "running" ? "on" : "off"}`} /> <strong>{report.host.name}</strong><small>{report.connection.transport === "unavailable" ? "no SSH route" : `via ${report.connection.transport}`}</small></div></td><td><Health online={report.herdr.status === "running"} label={report.herdr.status} /><small className="version-note">{report.herdr.version ? `v${report.herdr.version}` : ""}</small><small className="version-note">Auto-start: {report.herdr.startup}</small></td><td>{report.herdr.workspaces.length || "—"}{report.herdr.workspaces.length > 0 && <small className="subline">{report.herdr.workspaces.join(", ")}</small>}</td><td>{report.herdr.agents.length ? report.herdr.agents.map((agent) => <div className="agent-pill" key={agent.id}><span className="tiny-status on" />{agent.name}<small>{agent.state}{agent.pid ? ` · PID ${agent.pid}` : ""}</small></div>) : <span className="muted">No active agents</span>}</td><td>{report.processes.length ? report.processes.map((proc) => <div className="process-cell" key={proc.pid}><strong>PID {proc.pid} · {proc.command}</strong><small>{proc.cpuPercent.toFixed(1)}% CPU · {proc.memoryMb} MB · {proc.elapsed}</small></div>) : <span className="muted">No daemon process</span>}</td></tr>)}</tbody></table></div>
             <div className="table-note"><span className="info-mark">i</span> Herdr agent names/states and daemon process usage are metadata only; terminal contents are never collected.</div>
-          </section>}
+          </section></>}
 
           {view === "treehouse" && <section className="view-panel" aria-label="Treehouse worktrees">
             <div className="panel-heading"><div><h2>Worktree inventory</h2><p>Treehouse state files across each user account. No terminal output is read.</p></div><span className="panel-count">{counts.worktrees} WORKTREES</span></div>
@@ -202,7 +234,9 @@ export default function Home() {
 
           {view === "orchestrator" && <OpenClawPanel report={openClaw} />}
 
-          <section className="activity-section"><div className="activity-heading"><div><h2>Recent telemetry</h2><p>Plaintext JSONL snapshots · local file-backed stub</p></div><a href="/api/logs" target="_blank" rel="noreferrer">View API ↗</a></div><div className="activity-list">{logs.slice(-5).reverse().map((item, index) => <div className="activity-row" key={`${item.at}-${index}`}><span className="activity-dot" /><div><strong>{item.type === "snapshot" ? "Fleet snapshot collected" : item.type}</strong><p>{item.host} · {item.at ? new Date(item.at).toLocaleTimeString() : ""}</p></div><span className="activity-source">{item.source}</span></div>)}{logs.length === 0 && <div className="activity-empty">No snapshots yet. Refresh to collect the first one.</div>}</div></section>
+          {view === "control" && <ControlPanel hosts={hosts.map(({ host, reachable, connection }) => ({ host, reachable, connection }))} />}
+
+          {view !== "control" && <section className="activity-section"><div className="activity-heading"><div><h2>Recent telemetry</h2><p>Plaintext JSONL snapshots · local file-backed stub</p></div><a href="/api/logs" target="_blank" rel="noreferrer">View API ↗</a></div><div className="activity-list">{logs.slice(-5).reverse().map((item, index) => <div className="activity-row" key={`${item.at}-${index}`}><span className="activity-dot" /><div><strong>{item.type === "snapshot" ? "Fleet snapshot collected" : item.type}</strong><p>{item.host} · {item.at ? new Date(item.at).toLocaleTimeString() : ""}</p></div><span className="activity-source">{item.source}</span></div>)}{logs.length === 0 && <div className="activity-empty">No snapshots yet. Refresh to collect the first one.</div>}</div></section>}
           <footer className="footer"><span>FIELDNOTE · PRIVATE FLEET VIEW</span><span>SSH host-key checking enabled</span></footer>
         </div>
       </section>

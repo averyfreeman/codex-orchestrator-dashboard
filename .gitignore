@@ -19,6 +19,9 @@
 
 # production
 /build
+/docs-site/dist/
+/docs-site/.astro/
+/docs-site/node_modules/
 
 # misc
 .DS_Store
@@ -42,6 +45,7 @@ next-env.d.ts
 
 # Local telemetry and ingestion credentials
 /logs/
+.dashboard-state/
 .env.local
 
 # Machine-specific inventory and generated Python files

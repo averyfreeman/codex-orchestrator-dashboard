@@ -1,0 +1,28 @@
+---
+title: Dashboard documentation
+description: Operate, secure, and extend a self-hosted Codex fleet dashboard.
+---
+
+The Codex Orchestrator Dashboard gives an operator one local view of Codex app-servers, Herdr sessions, Treehouse worktrees, and optional OpenClaw gateway status. Its control plane can start and interrupt a Codex turn, manage named Herdr sessions, and request a guarded daemon start when a host is down.
+
+The **dashboard is a self-hosted Next.js application**. The public GitHub Pages site is a separate static operator and maintainer guide; it has no fleet inventory, credentials, or live control API.
+
+## Choose a path
+
+- **Operators:** [Set up the local dashboard](./operators/setup/), [read fleet status](./operators/operations/), [use Codex and Herdr controls](./operators/controls/), and [understand profile permissions](./operators/permissions/).
+- **Maintainers:** [review the architecture](./maintainers/architecture/), [protocol and telemetry choices](./maintainers/protocols-telemetry/), and [development and release checks](./maintainers/development/).
+- **Reference:** see the [HTTP API](./reference/api/), [Python helpers](./reference/scripts/), and [configuration](./reference/configuration/).
+
+## What runs where
+
+The browser talks to a loopback-only Next.js gateway. The gateway reads bounded host metadata over local probes or strict SSH, and it starts a host-scoped Codex app-server bridge only when the operator chooses to send a prompt. SSH tries configured routes in order: use ZeroTier first and Tailscale as failover. Private host inventory and SSH keys stay on the gateway host.
+
+For deployment, GitHub Pages builds only this documentation tree. Next.js request-time route handlers, streaming turns, and local file-backed telemetry remain on the operator’s machine. See [why the app is self-hosted](./maintainers/architecture/#deployment-boundary).
+
+## Dashboard screenshots
+
+These captures show views from a configured fleet and include operational host and process metadata. The [static preview fixture](/codex-orchestrator-dashboard/dashboard-preview/) is separate: it uses fictional hosts, disabled controls, and no live connections.
+
+<img src="/codex-orchestrator-dashboard/screenshots/dashboard-fleet.png" alt="App-server fleet overview with host health, network routes, and recent telemetry" width="100%" />
+
+More full-screen views: [Herdr sessions](/codex-orchestrator-dashboard/screenshots/dashboard-herdr.png), [Treehouse worktrees](/codex-orchestrator-dashboard/screenshots/dashboard-treehouse.png), [OpenClaw gateway](/codex-orchestrator-dashboard/screenshots/dashboard-openclaw.png), and [interactive control](/codex-orchestrator-dashboard/screenshots/dashboard-control.png).
