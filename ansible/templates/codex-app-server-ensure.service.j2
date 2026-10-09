@@ -3,7 +3,7 @@ Description=Ensure Codex app-server daemon is running
 
 [Service]
 Type=oneshot
-Environment=CODEX_HOME={{ ansible_facts['env']['HOME'] }}/.codex
+Environment=CODEX_HOME={{ fleet_codex_home | quote }}
 Environment=PATH={{ ansible_facts['env']['HOME'] }}/.local/bin:/usr/local/bin:/usr/bin:/bin
 WorkingDirectory={{ ansible_facts['env']['HOME'] }}
 ExecStart={{ ansible_facts['env']['HOME'] }}/.local/bin/codex app-server daemon start

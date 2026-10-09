@@ -216,7 +216,7 @@ export function ControlPanel({ hosts }: { hosts: ControlHost[] }) {
         <button type="button" className={styles.newThread} disabled={busy} onClick={startNewThread}>New thread</button>
       </div>
       <div className={styles.controls}>
-        <label className={styles.hostPicker}>HOST<select value={activeHostSlug} onChange={(event) => changeHost(event.target.value)} disabled={!hosts.length || busy}>
+        <label className={styles.hostPicker}>HOST<select className="select select-bordered select-sm" value={activeHostSlug} onChange={(event) => changeHost(event.target.value)} disabled={!hosts.length || busy}>
           {hosts.map((host) => <option key={host.host.slug} value={host.host.slug}>{host.host.name}{host.reachable ? " · online" : " · unavailable"}</option>)}
         </select></label>
         <div className={styles.profile}>

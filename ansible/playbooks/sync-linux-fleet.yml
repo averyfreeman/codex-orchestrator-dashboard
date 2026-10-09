@@ -2,6 +2,9 @@
 - name: Configure the Linux Codex fleet
   hosts: linux_fleet
   gather_facts: true
+  vars:
+    fleet_codex_home: >-
+      {{ (fleet_codex_home_override | default('~/.codex', true) | regex_replace('^~', ansible_facts['env']['HOME'])) }}
 
   tasks:
     - name: Check user-level tool installation paths
@@ -17,6 +20,8 @@
       ansible.builtin.shell: "curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh"
       args:
         creates: "{{ ansible_facts['env']['HOME'] }}/.local/bin/codex"
+      environment:
+        CODEX_HOME: "{{ fleet_codex_home }}"
       when: not fleet_tools.results[0].stat.exists
 
     - name: Install Herdr with the checksum-verifying official installer
@@ -61,12 +66,14 @@
           - python3
           - "{{ ansible_facts['env']['HOME'] }}/.local/share/codex-fleet/sync_codex_profile.py"
           - --config
-          - "{{ ansible_facts['env']['HOME'] }}/.codex/config.toml"
+          - "{{ fleet_codex_home }}/config.toml"
           - --profile
           - "{{ ansible_facts['env']['HOME'] }}/.local/share/codex-fleet/profile.json"
           - --home
           - "{{ ansible_facts['env']['HOME'] }}"
           - --write
+      environment:
+        CODEX_HOME: "{{ fleet_codex_home }}"
       register: profile_sync
       changed_when: "'Updated Codex fleet profile' in profile_sync.stdout"
       tags: [codex_profile]
@@ -76,8 +83,10 @@
         argv:
           - python3
           - -c
-          - "import json,pathlib; p=pathlib.Path.home()/'.codex/app-server-daemon/settings.json'; print(str(json.loads(p.read_text()).get('remoteControlEnabled',False)).lower() if p.exists() else 'false')"
+          - "import json,os,pathlib; p=pathlib.Path(os.environ['CODEX_HOME'])/'app-server-daemon/settings.json'; print(str(json.loads(p.read_text()).get('remoteControlEnabled',False)).lower() if p.exists() else 'false')"
       register: remote_control_enabled
+      environment:
+        CODEX_HOME: "{{ fleet_codex_home }}"
       changed_when: false
 
     - name: Bootstrap Codex Remote Control when not already enabled
@@ -89,6 +98,8 @@
           - bootstrap
           - --remote-control
       when: remote_control_enabled.stdout != "true"
+      environment:
+        CODEX_HOME: "{{ fleet_codex_home }}"
 
     - name: Check whether user services need login lingering
       ansible.builtin.command:

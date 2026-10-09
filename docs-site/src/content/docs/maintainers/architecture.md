@@ -44,6 +44,36 @@ The request-time routes and local JSONL store are why the live Next.js app stays
 
 The dashboard tunnels the host’s app-server control channel over strict SSH. The transport is bidirectional; stdio frames the proxy stream and does not mean the feature is one-way. See [protocol choices](../protocols-telemetry/) and the canonical [architecture record](https://github.com/averyfreeman/codex-orchestrator-dashboard/blob/main/docs/architecture.md).
 
+## Codex fleet sync
+
+Codex sync is a separate, operator-started control flow. Health polling stays read-only. The operator selects one reference host and peers, receives a short-lived plan of safe differences and blocked items, and explicitly applies that plan.
+
+<Mermaid caption="Codex fleet sync inspects selected hosts on demand, validates the reviewed plan again before apply, and reports sanitized outcomes." code={`sequenceDiagram
+    participant Operator
+    participant UI as Codex sync view
+    participant API as Loopback Next.js API
+    participant Source as Reference host helper
+    participant Peers as Target host helpers
+    Operator->>UI: Select reference and targets; compare
+    UI->>API: POST /api/control/codex-sync/plan
+    API->>Source: Inspect with source CODEX_HOME
+    API->>Peers: Inspect over local or strict SSH routes
+    Source-->>API: Bounded source snapshot
+    Peers-->>API: Bounded target snapshots
+    API-->>UI: Ten-minute plan with safe diffs and blocked items
+    Operator->>UI: Review and apply
+    UI->>API: POST /api/control/codex-sync/apply
+    API->>Source: Recheck reference state
+    API->>Peers: Recheck targets, then apply validated actions
+    Peers-->>API: Per-category results and restart outcome
+    UI->>API: GET /api/control/codex-sync/runs/{runId}
+    API-->>UI: Sanitized per-host progress
+`} />
+
+The `CODEX_HOME` value is resolved per host from its private inventory override, the dashboard process environment for the local host, or `~/.codex`. The resolved value is supplied explicitly to probes, control, recovery, and sync. The macOS LaunchAgent installer reads its local override from the private inventory, and Ansible expands each remote override against that host's home before configuring Codex commands and managed systemd units. Host-relative paths are normalized for comparison; a target keeps its own home path, and browser responses contain a safe label rather than its absolute override.
+
+The plan compares installed CLI and running app-server versions separately, supported marketplace/plugin state, portable settings in `config.toml` and top-level `*.config.toml` profiles, and user-owned skills. When CLI versions differ, the fixed helper invokes the official Codex installer pinned to the reference release and verifies the installed version. Unsafe or unclassified config, secrets, auth, machine-specific values, repo/system skills, and generated plugin caches stay local. Local plugin sources must pass bounded path and content validation. Apply rechecks state and rejects expired or stale plans. Config/profile edits are validated and atomic with private backups; durable run data and telemetry contain only IDs, versions, category outcomes, restart status, and counts. The optional post-apply restart is attempted once for an affected managed daemon when it can be proven idle; otherwise runtime drift is reported as deferred. See the canonical [Codex sync architecture](https://github.com/averyfreeman/codex-orchestrator-dashboard/blob/main/docs/architecture.md#codex-fleet-sync), [operator walkthrough](../operators/codex-sync/), and [ADR 0006](https://github.com/averyfreeman/codex-orchestrator-dashboard/blob/main/docs/adr/0006-codex-fleet-sync.md).
+
 ## Data boundaries
 
 - Host reports contain bounded health, version, counts, process usage, and worktree metadata.

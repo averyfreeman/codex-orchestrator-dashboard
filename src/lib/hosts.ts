@@ -19,6 +19,8 @@ export type HostDefinition = {
   sshRoutes?: SshRoute[];
   /** Marks the gateway host so the collector probes it without SSH. */
   local?: boolean;
+  /** Optional per-host CODEX_HOME override, absolute or relative to $HOME. */
+  codexHome?: string;
 };
 
 /** Supported overlay transports for SSH routes. */
@@ -62,7 +64,29 @@ function isHostDefinition(value: unknown): value is HostDefinition {
     (host.tailscaleIp === null || typeof host.tailscaleIp === "string") &&
     (host.zerotierIp === null || typeof host.zerotierIp === "string") &&
     (host.sshRoutes === undefined || (Array.isArray(host.sshRoutes) && host.sshRoutes.every(isSshRoute))) &&
-    (host.local === undefined || typeof host.local === "boolean");
+    (host.local === undefined || typeof host.local === "boolean") &&
+    (host.codexHome === undefined || isCodexHomeOverride(host.codexHome));
+}
+
+function isCodexHomeOverride(value: unknown): value is string {
+  if (typeof value !== "string" || !value.trim() || /[\0\r\n]/.test(value)) return false;
+  if (value === "~") return true;
+  if (value.startsWith("~/")) return !value.slice(2).split(/[\\/]+/).includes("..");
+  return path.isAbsolute(value) && !value.split(path.sep).includes("..");
+}
+
+/** Resolve an inventory's Codex home without exposing it in browser reports. */
+export function configuredCodexHome(host: HostDefinition) {
+  const raw = host.codexHome ?? (host.local ? process.env.CODEX_HOME : undefined) ?? "~/.codex";
+  if (raw === "~") return raw;
+  if (raw.startsWith("~/")) return raw;
+  return raw;
+}
+
+function publicHost(host: HostDefinition): HostDefinition {
+  const safeHost = { ...host };
+  delete safeHost.codexHome;
+  return safeHost;
 }
 
 function isSshRoute(value: unknown): value is SshRoute {
@@ -111,6 +135,7 @@ export type HostReport = {
   };
   appServer: {
     status: string;
+    cliVersion: string | null;
     version: string | null;
     remoteControlEnabled: boolean | null;
     remoteControlRuntime: string;
@@ -138,12 +163,13 @@ export function unavailableReport(
 ): HostReport {
   const reason = "Host has not responded over its configured overlay routes.";
   return {
-    host,
+    host: publicHost(host),
     checkedAt,
     reachable: false,
     connection: { transport: "unavailable", target: null },
     appServer: {
       status: "unavailable",
+      cliVersion: null,
       version: null,
       remoteControlEnabled: null,
       remoteControlRuntime: "unavailable",

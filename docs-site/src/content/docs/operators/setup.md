@@ -38,12 +38,15 @@ Each host has a stable slug, display name, operating system, optional display-on
   "localIp": null,
   "tailscaleIp": null,
   "zerotierIp": null,
+  "codexHome": "~/.codex-work",
   "sshRoutes": [
     { "transport": "zerotier", "target": "operator@node-a.example.test", "hostKeyAlias": "fleet-node-a" },
     { "transport": "tailscale", "target": "operator@node-a.example.test", "hostKeyAlias": "fleet-node-a" }
   ]
 }
 ```
+
+`codexHome` is optional. Omit it for the default `~/.codex`; set it on a host when Codex uses a different directory. It accepts `~`, a path under the host user's home (for example, `~/.codex-work`), or an absolute path. For the local host, the dashboard process's `CODEX_HOME` environment variable is used when the inventory has no override. See the [configuration reference](../../reference/configuration/) for resolution and privacy details.
 
 Do not put private addresses, personal hostnames, emails, or credentials in tracked files. Keep `fleet.local.json`, SSH keys, and `.env.local` on the gateway. The public-data scan checks tracked and non-ignored files before publication.
 
@@ -52,3 +55,5 @@ Do not put private addresses, personal hostnames, emails, or credentials in trac
 For Linux, use the [dynamic inventory](https://github.com/averyfreeman/codex-orchestrator-dashboard/blob/main/ansible/inventory.py) and [`sync-linux-fleet.yml`](https://github.com/averyfreeman/codex-orchestrator-dashboard/blob/main/ansible/playbooks/sync-linux-fleet.yml). The `codex_profile` tag updates the shared Codex defaults without changing service lifecycle. On macOS, the LaunchAgent installer supports check-only and explicit install modes; see the [service templates](https://github.com/averyfreeman/codex-orchestrator-dashboard/tree/main/macos/LaunchAgents).
 
 Codex authentication remains local to each host. Profile synchronization preserves auth and unrelated MCP/plugin configuration; never copy auth files between hosts.
+
+For a step-by-step Codex fleet sync walkthrough, including reference selection, review, apply, and restart results, see [Codex fleet sync](../codex-sync/).

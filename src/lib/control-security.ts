@@ -6,7 +6,9 @@ function isLoopback(hostname: string) {
 /** CSRF guard for the loopback-only deployment; this is not network authentication. */
 /** Check same-origin loopback requests for CSRF defense; this does not authenticate users. */
 export function isLocalDashboardRequest(request: Request) {
-  const origin = request.headers.get("origin");
+  // Same-origin GET fetches commonly omit Origin, so use the browser's
+  // same-origin Referer as the equivalent signal for read-only status routes.
+  const origin = request.headers.get("origin") ?? request.headers.get("referer");
   const host = request.headers.get("host");
   if (!origin || !host) return false;
   try {

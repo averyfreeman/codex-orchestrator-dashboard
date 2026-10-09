@@ -41,12 +41,26 @@ def ssh_available(target: str, alias: str) -> bool:
         return False
 
 
+def valid_codex_home_override(value: object) -> bool:
+    if not isinstance(value, str) or not value.strip() or any(character in value for character in "\0\r\n"):
+        return False
+    if value == "~":
+        return True
+    if value.startswith("~/"):
+        return ".." not in pathlib.PurePosixPath(value[2:]).parts and ".." not in value[2:].split("\\")
+    path = pathlib.PurePosixPath(value)
+    return path.is_absolute() and ".." not in path.parts
+
+
 def inventory() -> dict:
     hostvars = {}
     host_slugs = []
     for host in load_hosts():
         slug = host.get("slug")
         routes = host.get("sshRoutes")
+        codex_home = host.get("codexHome")
+        if codex_home is not None and not valid_codex_home_override(codex_home):
+            continue
         if not isinstance(slug, str) or host.get("local") or not isinstance(routes, list) or not routes:
             continue
 
@@ -71,6 +85,8 @@ def inventory() -> dict:
             "ansible_ssh_common_args": f"-o HostKeyAlias={alias} -o StrictHostKeyChecking=yes",
             "fleet_transport": selected.get("transport", "unknown"),
         }
+        if codex_home is not None:
+            hostvars[slug]["fleet_codex_home_override"] = codex_home
         host_slugs.append(slug)
 
     return {"linux_fleet": {"hosts": host_slugs}, "_meta": {"hostvars": hostvars}}

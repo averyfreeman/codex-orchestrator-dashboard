@@ -89,13 +89,29 @@ The private inventory is the source of truth for route order and host identity. 
 
 For plugin, skill, MCP, and profile propagation, distribute versioned non-secret manifests. Keep credentials and environment-specific MCP values on each host or in a secret manager. Apply changes in an opt-in dashboard-managed profile first, inspect effective config, then promote a reviewed policy to the shared fleet profile. Do not copy auth tokens between hosts.
 
+## Codex fleet sync
+
+Codex sync is an explicit, on-demand control flow. Each run names one reference host and selected peers, reads current host state when the operator asks for a comparison, presents a short-lived review plan, and applies only after the operator confirms it. The 30-second health poll never creates plans or writes host state. The UI initially selects other currently reachable peers; when the API omits `targetHostSlugs`, the plan includes other hosts reachable to the on-demand inspection.
+
+The flow uses `POST /api/control/codex-sync/plan`, `POST /api/control/codex-sync/apply`, and `GET /api/control/codex-sync/runs/{runId}`. All three routes use the local-origin guard. The fixed `scripts/codex_sync.py` helper runs locally or over the inventory's strict SSH route; the browser cannot provide an arbitrary command or destination path.
+
+Resolve `CODEX_HOME` independently on every host: a private per-host inventory `codexHome` override takes precedence, the dashboard process environment is used for the local host when no inventory override exists, and `~/.codex` is the default. Overrides accept `~`, a path under the host user's home, or an absolute path; parent-directory traversal is rejected. Pass each resolved value explicitly to probes, control proxies, recovery, and the sync helper. The macOS LaunchAgent installer reads the local host's override from the private inventory before its process environment; Ansible expands remote overrides against each host's home and supplies them to Codex setup commands and managed systemd units. A peer retains its own home path. The browser receives a safe path label rather than the private absolute override, and host paths are normalized before config comparisons.
+
+The plan compares installed `codex --version` separately from the running app-server version; `config.toml` and every top-level `*.config.toml` profile; marketplace sources and installed/enabled plugins; and user-owned skills in `~/.agents/skills` and `$CODEX_HOME/skills`. The `CODEX_HOME` row reports the resolved home state for each host; it does not make host path strings identical. If the installed CLI differs, the fixed helper uses the official Codex installer with the selected reference release, then verifies the installed version. Runtime drift describes the currently running daemon.
+
+Sync preserves auth files, credentials, MCP secret values, machine-specific or unclassified TOML settings, repo-scoped skills, Codex-managed system skills, and generated plugin caches. Only bounded editable local plugin packages that pass path, manifest, symlink, size, and content checks can be transferred. Git marketplace sources are refreshed with Codex's marketplace commands. The fixed Codex-owned OpenAI marketplaces are reconciled through Codex's plugin add/remove commands; their generated snapshot roots are never copied. Unsupported or unsafe differences appear as blocked items.
+
+Plans and transfer actions live in process memory and expire after ten minutes. Before apply the server re-inspects and re-hashes source and target state; a stale or expired plan is rejected and must be recreated. Config/profile edits use a narrow setting allowlist, preserve unrelated TOML, validate the result, write atomically, and keep owner-only pre-change backups under `$CODEX_HOME/fleet-sync-backups/<run-id>/`. Skills and local plugin sources use a private run-scoped backup boundary for replaced or removed files. Durable run records and telemetry contain IDs, versions, category outcomes, restart status, and counts; raw config values, skill/plugin contents, snapshot hashes, and credentials are not persisted.
+
+The **Auto-restart when finished** option is off by default. After apply, the dashboard makes one restart attempt only when sync changed the CLI, config/profile, or plugin state, the host uses a known dashboard-managed macOS LaunchAgent or Linux systemd user service, and the app-server protocol confirms there is no active turn. Unknown activity, an active turn, or an unmanaged service defers the attempt and leaves runtime drift visible; the dashboard does not queue an automatic retry. This is a bounded exception to down-only recovery, not a general service control surface. See [ADR 0006](adr/0006-codex-fleet-sync.md).
+
 ## Boundaries and failure behavior
 
 - The dashboard binds to loopback by default and control mutations require the same loopback origin; host SSH credentials remain on the gateway and are never sent to the browser. Do not expose it remotely without adding user authentication and CSRF protection.
 - The gateway allowlists host IDs and app-server/Herdr operations. Host selection is explicit per turn.
-- Codex turns, Herdr named sessions, and the single down-only Codex daemon start action are the only lifecycle controls.
+- Codex turns, Herdr named sessions, down-only daemon start, and the bounded Codex sync restart exception are the only lifecycle controls.
 - Status snapshots are sanitized and bounded. An unreachable host returns unavailable state and the attempted transport without leaking command output.
-- Daemon recovery is an explicit `start` request only when the app-server is down. The systemd ensure timer or macOS LaunchAgent remains the automatic retry path; the dashboard never stops or restarts a responding daemon.
+- General daemon recovery remains an explicit `start` request only when the app-server is down. Codex sync may restart a responding daemon only through the separate opt-in, managed-service, active-turn-checked exception above; the dashboard never exposes general stop/restart or service-manager commands.
 
 ## Automatic Git publication
 
@@ -103,7 +119,7 @@ The repository Stop hook runs a public-snapshot scan, tests, lint, type checking
 
 ## Rollout
 
-1. The local Codex control path, down-only daemon start action, and dashboard-managed network switch are implemented; keep loopback binding until a user-authentication layer is added.
+1. The local Codex control path, down-only daemon start action, dashboard-managed network switch, and reviewed Codex fleet sync path are implemented; keep loopback binding until a user-authentication layer is added.
 2. Add Herdr event subscriptions with snapshot recovery; named-session listing/start/stop is implemented.
 3. Add explicit OpenClaw ACP delegation as a separate workflow.
 4. Reconcile Herdr and Treehouse startup state on every target host and verify service persistence after reboot.

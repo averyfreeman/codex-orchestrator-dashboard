@@ -21,15 +21,6 @@ import sys
 import time
 from typing import Any
 
-REMOTE_PROXY_COMMAND = r'''printf 'DASHBOARD_HOME=%s\n' "$HOME"
-for codex_path in "$HOME/.local/bin/codex" "$HOME/.codex/packages/app-server-daemon/current/bin/codex" "$HOME/.codex/packages/standalone/current/bin/codex"; do
-  if [ -x "$codex_path" ]; then
-    exec "$codex_path" app-server proxy --sock "$HOME/.codex/app-server-control/app-server-control.sock"
-  fi
-done
-exit 127'''
-
-
 class ControlError(RuntimeError):
     """Raised when the selected Codex app-server transport or RPC fails."""
 
@@ -59,14 +50,33 @@ def _route_is_valid(route: Any) -> bool:
     )
 
 
-def _codex_path() -> str:
+def _codex_home_path(host: Any = None) -> pathlib.Path:
+    raw = host.get("codexHome") if isinstance(host, dict) else None
+    raw = raw or os.environ.get("CODEX_HOME") or "~/.codex"
+    if not isinstance(raw, str) or not raw or any(char in raw for char in "\x00\r\n"):
+        raise ControlError("Invalid CODEX_HOME inventory override")
+    if raw == "~":
+        return pathlib.Path.home().resolve()
+    if raw.startswith("~/"):
+        suffix = pathlib.PurePosixPath(raw[2:])
+        if ".." in suffix.parts:
+            raise ControlError("Invalid CODEX_HOME inventory override")
+        return (pathlib.Path.home() / pathlib.Path(*suffix.parts)).resolve()
+    candidate = pathlib.Path(raw)
+    if not candidate.is_absolute() or ".." in candidate.parts:
+        raise ControlError("Invalid CODEX_HOME inventory override")
+    return candidate.resolve()
+
+
+def _codex_path(host: Any = None) -> str:
     configured = os.environ.get("CODEX_CLI_PATH")
     candidates = [configured] if configured else []
     home = pathlib.Path.home()
+    codex_home = _codex_home_path(host)
     candidates.extend([
         str(home / ".local/bin/codex"),
-        str(home / ".codex/packages/app-server-daemon/current/bin/codex"),
-        str(home / ".codex/packages/standalone/current/bin/codex"),
+        str(codex_home / "packages/app-server-daemon/current/bin/codex"),
+        str(codex_home / "packages/standalone/current/bin/codex"),
     ])
     for candidate in candidates:
         if candidate and pathlib.Path(candidate).is_file() and os.access(candidate, os.X_OK):
@@ -352,20 +362,52 @@ def _permissions_fit_profile(value: Any, home: str, network_access: bool) -> boo
     return isinstance(value, dict) and _granted_permissions(value, home, network_access) == value
 
 
-def _spawn_local() -> tuple[subprocess.Popen[bytes], str, str]:
-    codex = _codex_path()
+def _spawn_local(host: dict[str, Any]) -> tuple[subprocess.Popen[bytes], str, str]:
+    codex_home = _codex_home_path(host)
+    codex = _codex_path(host)
     home = str(pathlib.Path.home().resolve())
+    env = os.environ.copy()
+    env["CODEX_HOME"] = str(codex_home)
     process = subprocess.Popen(
-        [codex, "app-server", "proxy", "--sock", str(pathlib.Path(home) / ".codex/app-server-control/app-server-control.sock")],
+        [codex, "app-server", "proxy", "--sock", str(codex_home / "app-server-control/app-server-control.sock")],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
+        env=env,
         bufsize=0,
     )
     return process, home, "local"
 
 
-def _spawn_remote(route: dict[str, str]) -> tuple[subprocess.Popen[bytes], str, str]:
+def _shell_quote(value: str) -> str:
+    return "'" + value.replace("'", "'\\''") + "'"
+
+
+def _remote_proxy_command(host: dict[str, Any]) -> str:
+    raw = host.get("codexHome") or "~/.codex"
+    if not isinstance(raw, str) or any(char in raw for char in "\x00\r\n"):
+        raise ControlError("Invalid CODEX_HOME inventory override")
+    if raw == "~":
+        assignment = 'CODEX_HOME="$HOME"'
+    elif raw.startswith("~/"):
+        suffix = pathlib.PurePosixPath(raw[2:])
+        if ".." in suffix.parts:
+            raise ControlError("Invalid CODEX_HOME inventory override")
+        assignment = f'CODEX_HOME="$HOME"/{_shell_quote(raw[2:])}'
+    elif pathlib.Path(raw).is_absolute() and ".." not in pathlib.Path(raw).parts:
+        assignment = f"CODEX_HOME={_shell_quote(raw)}"
+    else:
+        raise ControlError("Invalid CODEX_HOME inventory override")
+    return (
+        f"{assignment}; export CODEX_HOME; "
+        "printf 'DASHBOARD_HOME=%s\\n' \"$HOME\"; "
+        "for codex_path in \"$HOME/.local/bin/codex\" \"$CODEX_HOME/packages/app-server-daemon/current/bin/codex\" \"$CODEX_HOME/packages/standalone/current/bin/codex\"; do "
+        "if [ -x \"$codex_path\" ]; then exec \"$codex_path\" app-server proxy --sock \"$CODEX_HOME/app-server-control/app-server-control.sock\"; fi; "
+        "done; exit 127"
+    )
+
+
+def _spawn_remote(route: dict[str, str], host: dict[str, Any]) -> tuple[subprocess.Popen[bytes], str, str]:
     process = subprocess.Popen(
         [
             "ssh", "-T", "-q",
@@ -373,7 +415,7 @@ def _spawn_remote(route: dict[str, str]) -> tuple[subprocess.Popen[bytes], str, 
             "-o", "ConnectTimeout=5",
             "-o", "StrictHostKeyChecking=yes",
             "-o", f"HostKeyAlias={route['hostKeyAlias']}",
-            "--", route["target"], REMOTE_PROXY_COMMAND,
+            "--", route["target"], _remote_proxy_command(host),
         ],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
@@ -398,7 +440,7 @@ def _spawn_remote(route: dict[str, str]) -> tuple[subprocess.Popen[bytes], str, 
 def connect_app_server(host: dict[str, Any]) -> AppServerConnection:
     """Connect to one allowlisted local or strict-SSH host app-server proxy."""
     if host.get("local") is True:
-        process, home, transport = _spawn_local()
+        process, home, transport = _spawn_local(host)
         connection = AppServerConnection(process, home, transport)
         try:
             connection.initialize()
@@ -414,7 +456,7 @@ def connect_app_server(host: dict[str, Any]) -> AppServerConnection:
     for route in routes:
         process = None
         try:
-            process, home, transport = _spawn_remote(route)
+            process, home, transport = _spawn_remote(route, host)
             connection = AppServerConnection(process, home, transport)
             connection.initialize()
             return connection

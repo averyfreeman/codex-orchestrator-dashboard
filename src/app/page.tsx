@@ -1,13 +1,29 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { HostReport } from "@/lib/hosts";
 import type { OpenClawReport } from "@/lib/orchestrator";
 import { ControlPanel } from "./control-panel";
 import { HerdrSessionsPanel } from "./herdr-sessions-panel";
+import { CodexSyncPanel } from "./codex-sync-panel";
 
-type View = "app-server" | "herdr" | "treehouse" | "orchestrator" | "control";
+type View = "app-server" | "herdr" | "treehouse" | "orchestrator" | "control" | "codex-sync";
 type LogItem = { at: string; source: string; host: string; type: string; stats?: Record<string, unknown> };
+const MOBILE_BREAKPOINT_QUERY = "(max-width: 680px)";
+
+function subscribeToMobileViewport(onChange: () => void) {
+  const query = window.matchMedia(MOBILE_BREAKPOINT_QUERY);
+  query.addEventListener("change", onChange);
+  return () => query.removeEventListener("change", onChange);
+}
+
+function getMobileViewportSnapshot() {
+  return window.matchMedia(MOBILE_BREAKPOINT_QUERY).matches;
+}
+
+function getServerMobileViewportSnapshot() {
+  return false;
+}
 
 function timeAgo(value?: string) {
   if (!value) return "—";
@@ -44,7 +60,7 @@ function HostCard({ report, recovering, onRecover }: { report: HostReport; recov
         <span className="minor">RC {report.appServer.remoteControlEnabled === null ? "unknown" : report.appServer.remoteControlEnabled ? "enabled" : "off"} · {report.appServer.remoteControlRuntime}</span>
         <span className="minor">{report.appServer.loadedThreads === null ? "threads —" : `${report.appServer.loadedThreads} loaded`}</span>
         <span className="minor transport-note">Via {report.connection.transport === "unavailable" ? "—" : report.connection.transport === "local" ? "Local" : report.connection.transport === "zerotier" ? "ZeroTier" : "Tailscale"}</span>
-        {!online && <button type="button" className="recovery-button" disabled={recovering} onClick={onRecover}>{recovering ? "Starting…" : "Start daemon"}</button>}
+        {!online && <button type="button" className="btn btn-sm recovery-button" disabled={recovering} onClick={onRecover}>{recovering ? "Starting…" : "Start daemon"}</button>}
       </div>
       {report.error && <p className="host-error">{report.error}</p>}
     </article>
@@ -90,6 +106,7 @@ function OpenClawPanel({ report }: { report: OpenClawReport | null }) {
 
 /** Render the polling fleet overview and switchable operational views. */
 export default function Home() {
+  const isMobileViewport = useSyncExternalStore(subscribeToMobileViewport, getMobileViewportSnapshot, getServerMobileViewportSnapshot);
   const [view, setView] = useState<View>("app-server");
   const [hosts, setHosts] = useState<HostReport[]>([]);
   const [logs, setLogs] = useState<LogItem[]>([]);
@@ -100,6 +117,16 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [lastChecked, setLastChecked] = useState<string>();
   const [notice, setNotice] = useState("");
+  const [sidebarOpenPreference, setSidebarOpenPreference] = useState<boolean | null>(null);
+  const sidebarOpen = sidebarOpenPreference ?? !isMobileViewport;
+  const filterInputRef = useRef<HTMLInputElement>(null);
+
+  const setSidebarOpen = useCallback((nextOpen: boolean | ((open: boolean) => boolean)) => {
+    setSidebarOpenPreference((currentPreference) => {
+      const currentOpen = currentPreference ?? !isMobileViewport;
+      return typeof nextOpen === "function" ? nextOpen(currentOpen) : nextOpen;
+    });
+  }, [isMobileViewport]);
 
   const refresh = useCallback(async (quiet = false) => {
     if (quiet) setRefreshing(true);
@@ -132,6 +159,25 @@ export default function Home() {
     const timer = window.setInterval(() => void refresh(true), 30_000);
     return () => { window.clearTimeout(initial); window.clearInterval(timer); };
   }, [refresh]);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        filterInputRef.current?.focus();
+      } else if (event.key === "Escape" && sidebarOpen) {
+        setSidebarOpen(false);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [sidebarOpen, setSidebarOpen]);
+
+  function selectView(nextView: View) {
+    setView(nextView);
+    if (isMobileViewport) setSidebarOpen(false);
+  }
 
   async function recoverCodex(host: HostReport["host"]) {
     if (recoveringHost) return;
@@ -170,29 +216,13 @@ export default function Home() {
     return hosts.filter((report) => [report.host.name, report.host.os, report.host.localIp, report.host.tailscaleIp, report.host.zerotierIp].join(" ").toLowerCase().includes(q));
   }, [hosts, query]);
 
-  const viewLabel = view === "app-server" ? "App-server fleet" : view === "herdr" ? "Herdr sessions" : view === "treehouse" ? "Treehouse worktrees" : view === "orchestrator" ? "OpenClaw gateway" : "Interactive control";
+  const viewLabel = view === "app-server" ? "App-server fleet" : view === "herdr" ? "Herdr sessions" : view === "treehouse" ? "Treehouse worktrees" : view === "orchestrator" ? "OpenClaw gateway" : view === "control" ? "Interactive control" : "Codex sync";
 
   return (
-    <main className="app-shell">
-      <aside className="sidebar">
-        <div className="brand"><div className="brand-icon"><span /><span /><span /></div><div><strong>FIELDNOTE</strong><small>CODEX FLEET</small></div></div>
-        <div className="side-label">WORKSPACE</div>
-        <button className="workspace-switch"><span className="workspace-dot" /> Orchestrator <span className="chevron">⌄</span></button>
-        <div className="side-label side-label-spaced">VIEWS</div>
-        <nav className="side-nav" aria-label="Dashboard views">
-          <button className={view === "app-server" ? "selected" : ""} onClick={() => setView("app-server")}><span className="nav-icon">◉</span> App-server fleet <b>{hosts.filter((host) => host.reachable).length}</b></button>
-          <button className={view === "herdr" ? "selected" : ""} onClick={() => setView("herdr")}><span className="nav-icon">▦</span> Herdr sessions <b>{counts.agents}</b></button>
-          <button className={view === "treehouse" ? "selected" : ""} onClick={() => setView("treehouse")}><span className="nav-icon">⌘</span> Treehouse <b>{counts.worktrees}</b></button>
-          <button className={view === "orchestrator" ? "selected" : ""} onClick={() => setView("orchestrator")}><span className="nav-icon">◎</span> OpenClaw <b>{openClaw?.totalSessions ?? "—"}</b></button>
-          <button className={view === "control" ? "selected" : ""} onClick={() => setView("control")}><span className="nav-icon">✳</span> Control <b>Codex</b></button>
-        </nav>
-        <div className="sidebar-spacer" />
-        <div className="sidebar-foot"><span className="pulse-dot" /> Polling every 30 sec <small>ZeroTier first · Tailscale fallback</small></div>
-        <div className="user-chip"><div className="avatar">O</div><div><strong>Operator</strong><small>fleet admin</small></div><span className="more">···</span></div>
-      </aside>
-
-      <section className="main-area">
-        <header className="topbar"><div className="breadcrumbs"><span>Fleet</span><span>/</span><strong>{viewLabel}</strong></div><div className="top-actions"><span className="updated">Updated {timeAgo(lastChecked)}</span><button className="refresh-button" onClick={() => void refresh(true)} disabled={refreshing}>{refreshing ? "Refreshing…" : "↻ Refresh"}</button><div className="top-avatar">O</div></div></header>
+    <main className={`app-shell drawer ${sidebarOpen ? "sidebar-open" : "sidebar-closed"}`}>
+      <input id="dashboard-sidebar-toggle" type="checkbox" className="drawer-toggle" checked={sidebarOpen} onChange={(event) => setSidebarOpen(event.target.checked)} tabIndex={-1} aria-hidden="true" />
+      <section className="main-area drawer-content">
+        <header className="topbar"><div className="topbar-leading"><button type="button" className="btn btn-ghost drawer-button sidebar-toggle" onClick={() => setSidebarOpen((open) => !open)} aria-controls="dashboard-sidebar" aria-expanded={sidebarOpen} aria-label={sidebarOpen ? "Close sidebar" : "Open sidebar"} title={sidebarOpen ? "Close sidebar" : "Open sidebar"}><span aria-hidden="true">{sidebarOpen ? "×" : "☰"}</span></button><div className="breadcrumbs"><span>Fleet</span><span>/</span><strong>{viewLabel}</strong></div></div><div className="top-actions"><span className="updated">Updated {timeAgo(lastChecked)}</span><button type="button" className="btn btn-outline btn-sm refresh-button" onClick={() => void refresh(true)} disabled={refreshing}>{refreshing ? "Refreshing…" : "↻ Refresh"}</button></div></header>
         <div className="content">
           <div className="page-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> OPERATIONS OVERVIEW</div><h1>{viewLabel}</h1><p>One place to see the machines, sessions, and worktrees behind your Codex fleet.</p></div><div className="heading-meta"><span className="live-indicator"><i /> LIVE</span><span>Last sync {lastChecked ? new Date(lastChecked).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}</span></div></div>
 
@@ -209,7 +239,8 @@ export default function Home() {
             <button role="tab" aria-selected={view === "treehouse"} className={view === "treehouse" ? "active" : ""} onClick={() => setView("treehouse")}>Treehouse / worktrees</button>
             <button role="tab" aria-selected={view === "orchestrator"} className={view === "orchestrator" ? "active" : ""} onClick={() => setView("orchestrator")}>OpenClaw</button>
             <button role="tab" aria-selected={view === "control"} className={view === "control" ? "active" : ""} onClick={() => setView("control")}>Interactive control</button>
-          </div><label className="search-box"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter hosts" aria-label="Filter hosts" /><kbd>⌘ K</kbd></label></div>
+            <button role="tab" aria-selected={view === "codex-sync"} className={view === "codex-sync" ? "active" : ""} onClick={() => setView("codex-sync")}>Codex sync</button>
+          </div><label className="search-box"><span aria-hidden="true">⌕</span><input ref={filterInputRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter hosts" aria-label="Filter hosts" /><kbd>⌘ K</kbd></label></div>
 
           {notice && <div className="notice" role="status"><span>ⓘ</span>{notice}<button onClick={() => setNotice("")} aria-label="Dismiss notice">×</button></div>}
           {loading && hosts.length === 0 ? <div className="loading-panel"><span className="loader" /> Connecting to configured hosts…</div> : null}
@@ -235,11 +266,30 @@ export default function Home() {
           {view === "orchestrator" && <OpenClawPanel report={openClaw} />}
 
           {view === "control" && <ControlPanel hosts={hosts.map(({ host, reachable, connection }) => ({ host, reachable, connection }))} />}
+          {view === "codex-sync" && <CodexSyncPanel hosts={hosts} />}
 
           {view !== "control" && <section className="activity-section"><div className="activity-heading"><div><h2>Recent telemetry</h2><p>Plaintext JSONL snapshots · local file-backed stub</p></div><a href="/api/logs" target="_blank" rel="noreferrer">View API ↗</a></div><div className="activity-list">{logs.slice(-5).reverse().map((item, index) => <div className="activity-row" key={`${item.at}-${index}`}><span className="activity-dot" /><div><strong>{item.type === "snapshot" ? "Fleet snapshot collected" : item.type}</strong><p>{item.host} · {item.at ? new Date(item.at).toLocaleTimeString() : ""}</p></div><span className="activity-source">{item.source}</span></div>)}{logs.length === 0 && <div className="activity-empty">No snapshots yet. Refresh to collect the first one.</div>}</div></section>}
           <footer className="footer"><span>FIELDNOTE · PRIVATE FLEET VIEW</span><span>SSH host-key checking enabled</span></footer>
         </div>
       </section>
+      <div className="drawer-side">
+        <label htmlFor="dashboard-sidebar-toggle" className="drawer-overlay" aria-label="Close sidebar" />
+        <aside id="dashboard-sidebar" className="sidebar" aria-label="Main navigation">
+          <div className="brand"><div className="brand-icon"><span /><span /><span /></div><div><strong>FIELDNOTE</strong><small>CODEX FLEET</small></div><button type="button" className="btn btn-ghost sidebar-close" onClick={() => setSidebarOpen(false)} aria-label="Close sidebar" title="Close sidebar">×</button></div>
+          <div className="side-label">VIEWS</div>
+          <nav className="side-nav" aria-label="Dashboard views">
+            <button type="button" className={view === "app-server" ? "selected" : ""} onClick={() => selectView("app-server")}><span className="nav-icon">◉</span> App-server fleet <b>{hosts.filter((host) => host.reachable).length}</b></button>
+            <button type="button" className={view === "herdr" ? "selected" : ""} onClick={() => selectView("herdr")}><span className="nav-icon">▦</span> Herdr sessions <b>{counts.agents}</b></button>
+            <button type="button" className={view === "treehouse" ? "selected" : ""} onClick={() => selectView("treehouse")}><span className="nav-icon">⌘</span> Treehouse <b>{counts.worktrees}</b></button>
+            <button type="button" className={view === "orchestrator" ? "selected" : ""} onClick={() => selectView("orchestrator")}><span className="nav-icon">◎</span> OpenClaw <b>{openClaw?.totalSessions ?? "—"}</b></button>
+            <button type="button" className={view === "control" ? "selected" : ""} onClick={() => selectView("control")}><span className="nav-icon">✳</span> Control <b>Codex</b></button>
+            <button type="button" className={view === "codex-sync" ? "selected" : ""} onClick={() => selectView("codex-sync")}><span className="nav-icon">⇄</span> Codex sync <b>{hosts.filter((host) => host.reachable).length}</b></button>
+          </nav>
+          <div className="sidebar-spacer" />
+          <div className="sidebar-foot"><span className="pulse-dot" /> Polling every 30 sec <small>ZeroTier first · Tailscale fallback</small></div>
+          <div className="user-chip"><div className="avatar" aria-hidden="true">O</div><div><strong>Operator</strong><small>fleet admin</small></div></div>
+        </aside>
+      </div>
     </main>
   );
 }

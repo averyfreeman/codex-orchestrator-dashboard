@@ -9,6 +9,8 @@ The overview reports whether a host responds, Codex version and Remote Control s
 
 The fleet collector polls every 30 seconds. Manual refresh runs the same bounded collection. SSH output is parsed into a sanitized report; raw command output, environment variables, prompts, transcripts, and terminal content are not returned to the browser.
 
+Codex sync is a separate on-demand workflow. It reads the selected source and targets only when you request a plan; fleet polling never creates a plan or changes host state. See the [Codex sync walkthrough](../codex-sync/) for the review and apply steps.
+
 ## Herdr and Treehouse
 
 The Herdr view summarizes daemon state, version, startup state, workspaces, agent metadata, and process CPU/RSS when the operating system reports it. These are process and agent metadata only; the dashboard does not read pane terminal output.

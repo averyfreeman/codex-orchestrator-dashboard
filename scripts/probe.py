@@ -17,6 +17,7 @@ import subprocess
 import time
 
 HOME = pathlib.Path.home()
+CODEX_HOME = pathlib.Path(os.environ.get("CODEX_HOME", str(HOME / ".codex")).replace("~", str(HOME), 1)).expanduser().resolve()
 
 def run(args, timeout=8):
     """Run one bounded host command and return stdout, stderr, and exit status."""
@@ -42,8 +43,8 @@ def launchd_job_loaded(suffix):
 
 codex = first_executable([
     str(HOME / ".local/bin/codex"),
-    str(HOME / ".codex/packages/app-server-daemon/current/bin/codex"),
-    str(HOME / ".codex/packages/standalone/current/bin/codex"),
+    str(CODEX_HOME / "packages/app-server-daemon/current/bin/codex"),
+    str(CODEX_HOME / "packages/standalone/current/bin/codex"),
 ])
 herdr = first_executable([
     str(HOME / ".local/bin/herdr"),
@@ -51,9 +52,14 @@ herdr = first_executable([
     "/opt/homebrew/bin/herdr",
 ])
 
-app = {"status": "unavailable", "version": None, "remoteControlEnabled": None, "remoteControlRuntime": "unknown", "loadedThreads": None, "startup": "unknown", "error": None}
+app = {"status": "unavailable", "cliVersion": None, "version": None, "remoteControlEnabled": None, "remoteControlRuntime": "unknown", "loadedThreads": None, "startup": "unknown", "error": None}
 processes = []
 if codex:
+    cli_out, _, cli_code = run([codex, "--version"])
+    if cli_code == 0:
+        import re
+        cli_match = re.search(r"\b(\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?)\b", cli_out)
+        app["cliVersion"] = cli_match.group(1) if cli_match else None
     out, err, code = run([codex, "app-server", "daemon", "version"])
     try:
         version = json.loads(out)
@@ -62,7 +68,7 @@ if codex:
         app["error"] = None if code == 0 else (err or "daemon status failed")
     except Exception:
         app["error"] = err or out or "daemon status did not return JSON"
-    settings_path = HOME / ".codex/app-server-daemon/settings.json"
+    settings_path = CODEX_HOME / "app-server-daemon/settings.json"
     try:
         settings = json.loads(settings_path.read_text())
         app["remoteControlEnabled"] = settings.get("remoteControlEnabled")
@@ -70,7 +76,7 @@ if codex:
         pass
     pid = None
     try:
-        pid_record = json.loads((HOME / ".codex/app-server-daemon/app-server.pid").read_text())
+        pid_record = json.loads((CODEX_HOME / "app-server-daemon/app-server.pid").read_text())
         pid = int(pid_record.get("pid"))
     except Exception:
         pass
@@ -87,7 +93,7 @@ if codex:
 
 def rpc_status(codex_path):
     """Read content-free app-server daemon status through its local proxy."""
-    socket_path = HOME / ".codex/app-server-control/app-server-control.sock"
+    socket_path = CODEX_HOME / "app-server-control/app-server-control.sock"
     proc = subprocess.Popen([codex_path, "app-server", "proxy", "--sock", str(socket_path)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0)
     buffer = bytearray()
     fd = proc.stdout.fileno()

@@ -23,9 +23,14 @@ All routes are served by the self-hosted Next.js application. State-changing con
 | `POST /api/control/codex/turn` | `{ "host": string, "prompt": string, "threadId"?: string }` | Start/resume a selected-host turn; returns Server-Sent Events |
 | `POST /api/control/codex/interrupt` | `{ "host": string, "threadId": string, "turnId": string }` | Request interrupt of one specific turn |
 | `POST /api/control/codex/recover` | `{ "host": string }` | Request fixed Codex daemon start only after server-side down check |
+| `POST /api/control/codex-sync/plan` | `{ "sourceHostSlug": string, "targetHostSlugs"?: string[] }` | Inspect current state and return a ten-minute review plan with safe diffs and blocked items. If targets are omitted, use other reachable Codex hosts. This inspection does not write host state. |
+| `POST /api/control/codex-sync/apply` | `{ "planId": string, "restartWhenFinished": boolean }` | Recheck source and target state, reject stale/expired plans, then start applying the reviewed plan; returns `202 { "runId": string }`. |
+| `GET /api/control/codex-sync/runs/{runId}` | — | Read sanitized per-host progress and outcomes for a run. |
 | `GET /api/control/herdr/sessions?host={slug}` | — | List sessions on one configured host |
 | `POST /api/control/herdr/sessions` | `{ "host": string, "action": "start"\|"stop", "name": string }` | Start/stop one validated named session; `default` is protected |
 
 Every host field must resolve against the private fleet inventory. Mutation routes reject non-local origins. The turn route caps prompt length at 40,000 characters and sends streaming events; interrupt success indicates acknowledgement, not final turn status. The app-server event stream supplies the terminal status.
+
+The sync plan, apply, and run-status routes also require the local-origin guard. The plan contains reviewable, classified values and safe host labels; the private absolute `CODEX_HOME` override and secret values are not sent to the browser. Plan payloads and transfer content stay in process memory. Persisted run status contains IDs, versions, category outcomes, restart status, and counts.
 
 Implementation links: [`src/app/api`](https://github.com/averyfreeman/codex-orchestrator-dashboard/tree/main/src/app/api), [`control security`](https://github.com/averyfreeman/codex-orchestrator-dashboard/blob/main/src/lib/control-security.ts), [`telemetry schema`](https://github.com/averyfreeman/codex-orchestrator-dashboard/blob/main/src/lib/logging.ts).

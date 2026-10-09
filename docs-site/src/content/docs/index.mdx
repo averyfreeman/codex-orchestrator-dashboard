@@ -3,13 +3,13 @@ title: Dashboard documentation
 description: Operate, secure, and extend a self-hosted Codex fleet dashboard.
 ---
 
-The Codex Orchestrator Dashboard gives an operator one local view of Codex app-servers, Herdr sessions, Treehouse worktrees, and optional OpenClaw gateway status. Its control plane can start and interrupt a Codex turn, manage named Herdr sessions, and request a guarded daemon start when a host is down.
+The Codex Orchestrator Dashboard gives an operator one local view of Codex app-servers and fleet sync, Herdr sessions, Treehouse worktrees, and optional OpenClaw gateway status. Its control plane can start and interrupt a Codex turn, compare and apply reviewed Codex sync plans, manage named Herdr sessions, and request a guarded daemon start when a host is down.
 
 The **dashboard is a self-hosted Next.js application**. The public GitHub Pages site is a separate static operator and maintainer guide; it has no fleet inventory, credentials, or live control API.
 
 ## Choose a path
 
-- **Operators:** [Set up the local dashboard](./operators/setup/), [read fleet status](./operators/operations/), [use Codex and Herdr controls](./operators/controls/), and [understand profile permissions](./operators/permissions/).
+- **Operators:** [Set up the local dashboard](./operators/setup/), [sync Codex hosts](./operators/codex-sync/), [read fleet status](./operators/operations/), [use Codex and Herdr controls](./operators/controls/), and [understand profile permissions](./operators/permissions/).
 - **Maintainers:** [review the architecture](./maintainers/architecture/), [protocol and telemetry choices](./maintainers/protocols-telemetry/), and [development and release checks](./maintainers/development/).
 - **Reference:** see the [HTTP API](./reference/api/), [Python helpers](./reference/scripts/), and [configuration](./reference/configuration/).
 

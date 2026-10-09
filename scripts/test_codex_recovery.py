@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).parent))
-from codex_recovery import REMOTE_START_COMMAND, RecoveryError, recover_host
+from codex_recovery import RecoveryError, recover_host, remote_start_command
 
 
 class CodexRecoveryTests(unittest.TestCase):
@@ -17,6 +17,7 @@ class CodexRecoveryTests(unittest.TestCase):
         self.assertEqual(transport, "local")
         self.assertEqual(run.call_args.args[0], ["/usr/local/bin/codex", "app-server", "daemon", "start"])
         self.assertEqual(run.call_args.kwargs["timeout"], 60)
+        self.assertIn("CODEX_HOME", run.call_args.kwargs["env"])
 
     def test_tries_zerotier_before_tailscale_and_uses_strict_host_keys(self):
         routes = [
@@ -38,7 +39,15 @@ class CodexRecoveryTests(unittest.TestCase):
         self.assertIn("HostKeyAlias=fleet-dc2", first)
         self.assertEqual(first[-2], routes[0]["target"])
         self.assertEqual(second[-2], routes[1]["target"])
-        self.assertEqual(first[-1], REMOTE_START_COMMAND)
+        self.assertEqual(first[-1], remote_start_command({"codexHome": "~/.codex"}))
+
+    def test_remote_start_uses_validated_inventory_codex_home(self):
+        routes = [{"transport": "zerotier", "target": "operator@192.0.2.15", "hostKeyAlias": "fleet-dc2"}]
+        run = Mock(return_value=subprocess.CompletedProcess([], 0, "", ""))
+        recover_host({"slug": "dc2", "codexHome": "~/.codex-alt", "sshRoutes": routes}, run)
+        command = run.call_args.args[0][-1]
+        self.assertIn('CODEX_HOME="$HOME"/\'.codex-alt\'', command)
+        self.assertIn('"$CODEX_HOME/packages/app-server-daemon/current/bin/codex"', command)
 
     def test_rejects_invalid_routes_without_running_a_command(self):
         run = Mock()

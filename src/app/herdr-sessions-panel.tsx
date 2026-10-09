@@ -81,15 +81,15 @@ export function HerdrSessionsPanel({ hosts }: { hosts: HerdrHost[] }) {
     <section className="view-panel" aria-label="Herdr named sessions">
       <div className="panel-heading"><div><h2>Named Herdr sessions</h2><p>Start or stop an isolated Herdr server namespace on one selected host.</p></div><span className="panel-count">HERDR CONTROL</span></div>
       <div className="session-control-toolbar">
-        <label>HOST<select value={hostSlug} onChange={(event) => { setSelected(event.target.value); setSessions([]); setNotice(""); }} disabled={!hosts.length || !!busy}>
+        <label>HOST<select className="select select-bordered select-sm" value={hostSlug} onChange={(event) => { setSelected(event.target.value); setSessions([]); setNotice(""); }} disabled={!hosts.length || !!busy}>
           {hosts.map((host) => <option key={host.host.slug} value={host.host.slug}>{host.host.name}</option>)}
         </select></label>
         <span className="session-transport">Via {transport || currentHost?.connection.transport || "—"}</span>
-        <button type="button" className="refresh-button" onClick={() => setRefreshId((value) => value + 1)} disabled={loading || !!busy}>{loading ? "Loading…" : "↻ Refresh"}</button>
+        <button type="button" className="btn btn-sm refresh-button" onClick={() => setRefreshId((value) => value + 1)} disabled={loading || !!busy}>{loading ? "Loading…" : "↻ Refresh"}</button>
       </div>
       <form className="session-create-form" onSubmit={startSession}>
         <label>Session name<input value={name} onChange={(event) => setName(event.target.value)} maxLength={32} pattern="[a-z][a-z0-9_-]{0,31}" disabled={!routeAvailable || !!busy} /></label>
-        <button type="submit" className="refresh-button" disabled={!routeAvailable || !name || !!busy}>{busy.startsWith("start:") ? "Starting…" : "Start named session"}</button>
+        <button type="submit" className="btn btn-sm refresh-button" disabled={!routeAvailable || !name || !!busy}>{busy.startsWith("start:") ? "Starting…" : "Start named session"}</button>
         <span>New sessions run a headless Herdr server. The default session is protected.</span>
       </form>
       {notice && <div className="notice" role="status">{notice}<button type="button" onClick={() => setNotice("")} aria-label="Dismiss notice">×</button></div>}
@@ -102,8 +102,8 @@ export function HerdrSessionsPanel({ hosts }: { hosts: HerdrHost[] }) {
           {session.default && <span className="default-session-badge">DEFAULT · PROTECTED</span>}
           <small>{session.running ? "Running" : "Stopped"}</small>
           {!session.default && (session.running
-            ? <button type="button" className="session-stop" disabled={!!busy} onClick={() => void changeSession("stop", session.name)}>{busy === `stop:${session.name}` ? "Stopping…" : "Stop"}</button>
-            : <button type="button" className="refresh-button" disabled={!!busy} onClick={() => void changeSession("start", session.name)}>{busy === `start:${session.name}` ? "Starting…" : "Start"}</button>)}
+            ? <button type="button" className="btn btn-sm session-stop" disabled={!!busy} onClick={() => void changeSession("stop", session.name)}>{busy === `stop:${session.name}` ? "Stopping…" : "Stop"}</button>
+            : <button type="button" className="btn btn-sm refresh-button" disabled={!!busy} onClick={() => void changeSession("start", session.name)}>{busy === `start:${session.name}` ? "Starting…" : "Start"}</button>)}
         </div>)}
       </div>
       <div className="table-note"><span className="info-mark">i</span> Stopping a named session ends its pane processes. The dashboard does not send terminal input or control arbitrary Herdr panes.</div>

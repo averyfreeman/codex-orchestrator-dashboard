@@ -10,3 +10,5 @@ Keep this file to definitions. Interface choices and implementation details live
 - **Dashboard-managed profile:** a Codex configuration preset owned by the dashboard and applied only to work started through that profile.
 - **OpenClaw delegation:** an explicit task sent to the OpenClaw gateway, with its own session identity and status.
 - **Fleet snapshot:** one bounded, content-free collection of host and agent metadata at a point in time.
+- **Codex sync plan:** a short-lived comparison of one reference host and selected peers, with reviewed changes and blocked differences.
+- **CODEX_HOME:** the per-user Codex state directory resolved for a host and passed explicitly to dashboard-managed Codex commands.

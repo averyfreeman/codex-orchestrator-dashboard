@@ -4,24 +4,43 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from typing import Any, Callable
 
-from codex_control import _codex_path, _route_is_valid
-
-REMOTE_START_COMMAND = r'''for codex_path in "$HOME/.local/bin/codex" "$HOME/.codex/packages/app-server-daemon/current/bin/codex" "$HOME/.codex/packages/standalone/current/bin/codex"; do
-  if [ -x "$codex_path" ]; then
-    exec "$codex_path" app-server daemon start >/dev/null 2>&1
-  fi
-done
-exit 127'''
-
+from codex_control import _codex_home_path, _codex_path, _route_is_valid
 
 class RecoveryError(RuntimeError):
     """Raised when a safe, fixed Codex daemon start cannot be requested."""
 
     pass
+
+
+def _shell_quote(value: str) -> str:
+    return "'" + value.replace("'", "'\\''") + "'"
+
+
+def remote_start_command(host: dict[str, Any]) -> str:
+    raw = host.get("codexHome") or "~/.codex"
+    if not isinstance(raw, str) or any(char in raw for char in "\x00\r\n"):
+        raise RecoveryError("Invalid CODEX_HOME inventory override")
+    if raw == "~":
+        assignment = 'CODEX_HOME="$HOME"'
+    elif raw.startswith("~/"):
+        if ".." in raw[2:].split("/"):
+            raise RecoveryError("Invalid CODEX_HOME inventory override")
+        assignment = f'CODEX_HOME="$HOME"/{_shell_quote(raw[2:])}'
+    elif raw.startswith("/") and ".." not in raw.split("/"):
+        assignment = f"CODEX_HOME={_shell_quote(raw)}"
+    else:
+        raise RecoveryError("Invalid CODEX_HOME inventory override")
+    return " ".join([
+        f"{assignment}; export CODEX_HOME;",
+        'for codex_path in "$HOME/.local/bin/codex" "$CODEX_HOME/packages/app-server-daemon/current/bin/codex" "$CODEX_HOME/packages/standalone/current/bin/codex"; do',
+        'if [ -x "$codex_path" ]; then exec "$codex_path" app-server daemon start >/dev/null 2>&1; fi;',
+        "done; exit 127",
+    ])
 
 
 def recover_host(host: Any, run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run) -> str:
@@ -30,8 +49,10 @@ def recover_host(host: Any, run: Callable[..., subprocess.CompletedProcess[str]]
         raise RecoveryError("Invalid recovery target")
 
     if host.get("local") is True:
+        codex_home = _codex_home_path(host)
+        env = {**os.environ, "CODEX_HOME": str(codex_home)}
         try:
-            result = run([_codex_path(), "app-server", "daemon", "start"], capture_output=True, text=True, timeout=60, check=False)
+            result = run([_codex_path(host), "app-server", "daemon", "start"], capture_output=True, text=True, timeout=60, check=False, env=env)
         except (OSError, subprocess.TimeoutExpired) as error:
             raise RecoveryError("The local Codex daemon start request did not complete") from error
         if result.returncode == 0:
@@ -61,7 +82,7 @@ def recover_host(host: Any, run: Callable[..., subprocess.CompletedProcess[str]]
                     "-o", "StrictHostKeyChecking=yes",
                     "-o", f"HostKeyAlias={alias}",
                     target,
-                    REMOTE_START_COMMAND,
+                    remote_start_command(host),
                 ],
                 capture_output=True,
                 text=True,

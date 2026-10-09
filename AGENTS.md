@@ -11,3 +11,17 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 ## Project context
 
 For changes to host control, SSH routes, Codex profiles, Herdr, or telemetry, read [`docs/architecture.md`](docs/architecture.md), [`CONTEXT.md`](CONTEXT.md), and the relevant ADRs under [`docs/adr/`](docs/adr/) first. When changing protocol integration or measurement strategy, consult [`docs/research/interactive-control-options.md`](docs/research/interactive-control-options.md).
+
+## Agent skills
+
+### Issue tracker
+
+Track work in GitHub Issues with `gh`; see `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, and `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Use the single-context layout in `docs/agents/domain.md`.

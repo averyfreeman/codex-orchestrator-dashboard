@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import plistlib
 import re
@@ -32,7 +33,7 @@ AGENTS = {
 AGENT_NAMES = tuple(AGENTS)
 
 
-def render_agent(name: str, home: Path, codex_bin: str, herdr_bin: str, label: str | None = None) -> dict[str, Any]:
+def render_agent(name: str, home: Path, codex_bin: str, herdr_bin: str, label: str | None = None, codex_home: Path | None = None) -> dict[str, Any]:
     """Render one LaunchAgent template into a plist mapping for a user."""
     spec = AGENTS[name]
     template_path = TEMPLATE_DIR / spec["template"]
@@ -41,6 +42,7 @@ def render_agent(name: str, home: Path, codex_bin: str, herdr_bin: str, label: s
         template.replace("@HOME@", escape(str(home)))
         .replace("@LABEL@", escape(label or spec["label"]))
         .replace("@CODEX_BIN@", escape(codex_bin))
+        .replace("@CODEX_HOME@", escape(str(codex_home or (home / ".codex"))))
         .replace("@HERDR_BIN@", escape(herdr_bin))
     )
     return plistlib.loads(rendered.encode("utf-8"))
@@ -114,6 +116,46 @@ def backup(path: Path) -> Path:
     return backup_path
 
 
+def resolve_codex_home(
+    home: Path,
+    inventory_path: Path,
+    environ: dict[str, str] | None = None,
+) -> Path:
+    """Resolve this local host's inventory override before CODEX_HOME/default."""
+    environment = os.environ if environ is None else environ
+    inventory_override: str | None = None
+    try:
+        hosts = json.loads(inventory_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        hosts = []
+    if isinstance(hosts, list):
+        local_hosts = [host for host in hosts if isinstance(host, dict) and host.get("local") is True]
+        overrides = [host.get("codexHome") for host in local_hosts if host.get("codexHome") is not None]
+        if len(overrides) > 1:
+            raise ValueError("multiple local host CODEX_HOME overrides are configured")
+        if overrides:
+            value = overrides[0]
+            if not isinstance(value, str):
+                raise ValueError("invalid local host CODEX_HOME override")
+            inventory_override = value
+
+    raw = inventory_override if inventory_override is not None else environment.get("CODEX_HOME") or str(home / ".codex")
+    if not raw.strip() or any(character in raw for character in "\0\r\n"):
+        raise ValueError("invalid CODEX_HOME")
+    if raw == "~":
+        codex_home = home
+    elif raw.startswith("~/"):
+        relative = Path(raw[2:])
+        if ".." in relative.parts:
+            raise ValueError("CODEX_HOME cannot contain parent traversal")
+        codex_home = home / relative
+    else:
+        codex_home = Path(raw)
+        if not codex_home.is_absolute() or ".." in codex_home.parts:
+            raise ValueError("CODEX_HOME must be absolute and cannot contain parent traversal")
+    return codex_home.resolve()
+
+
 def ensure_agents(*, install: bool) -> int:
     """Verify both user LaunchAgents or install and bootstrap them explicitly."""
     if sys.platform != "darwin":
@@ -121,6 +163,12 @@ def ensure_agents(*, install: bool) -> int:
         return 2
 
     home = Path.home()
+    inventory_path = Path(os.environ.get("FLEET_CONFIG_PATH", str(REPO_ROOT / "config" / "fleet.local.json"))).expanduser()
+    try:
+        codex_home = resolve_codex_home(home, inventory_path)
+    except ValueError as error:
+        print(f"{error}.", file=sys.stderr)
+        return 2
     uid = os.getuid()
     codex_bin = shutil.which("codex")
     herdr_bin = shutil.which("herdr")
@@ -133,7 +181,7 @@ def ensure_agents(*, install: bool) -> int:
     for name in AGENT_NAMES:
         spec = AGENTS[name]
         label = find_loaded_label(name) or spec["label"]
-        expected = render_agent(name, home, codex_bin, herdr_bin, label)
+        expected = render_agent(name, home, codex_bin, herdr_bin, label, codex_home)
         target = destination / f"{label}.plist"
         current = read_plist(target) if target.exists() else None
         loaded = launchctl_loaded(uid, label)

@@ -19,6 +19,6 @@ Select a host to list its named sessions. Start and stop actions are scoped to a
 
 The local OpenClaw gateway panel is observation-only. There is no implicit delegation from a Codex prompt to OpenClaw. If explicit OpenClaw delegation is added later, it should have its own destination label, task/session ID, status, and cancellation semantics.
 
-The dashboard does not provide arbitrary SSH commands, general process termination, bulk session shutdown, or app-server daemon restart controls. This keeps actions specific to the selected host and documented API.
+The dashboard does not provide arbitrary SSH commands, general process termination, bulk session shutdown, or general app-server restart controls. Codex sync has a separate opt-in, guarded post-apply restart attempt for affected managed daemons; see the [sync walkthrough](../codex-sync/) for its idle checks and deferred outcomes.
 
 See the [HTTP route reference](../../reference/api/) for request shapes and local-origin requirements.

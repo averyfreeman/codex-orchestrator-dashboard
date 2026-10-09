@@ -1,5 +1,7 @@
 import importlib.util
+import json
 import plistlib
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -12,6 +14,35 @@ SPEC.loader.exec_module(module)
 
 
 class MacOSLaunchAgentTests(unittest.TestCase):
+    def test_inventory_codex_home_override_precedes_process_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory) / "user"
+            home.mkdir()
+            inventory = Path(directory) / "fleet.json"
+            inventory.write_text(json.dumps([{"local": True, "codexHome": "~/.codex-custom"}]))
+            result = module.resolve_codex_home(home, inventory, {"CODEX_HOME": "/tmp/environment-codex"})
+        self.assertEqual(result, (home / ".codex-custom").resolve())
+
+    def test_local_environment_precedes_default_when_inventory_has_no_override(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory) / "user"
+            home.mkdir()
+            inventory = Path(directory) / "fleet.json"
+            inventory.write_text(json.dumps([{"local": True}]))
+            result = module.resolve_codex_home(home, inventory, {"CODEX_HOME": "~/from-env"})
+        self.assertEqual(result, (home / "from-env").resolve())
+
+    def test_multiple_local_inventory_overrides_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            inventory = root / "fleet.json"
+            inventory.write_text(json.dumps([
+                {"local": True, "codexHome": "~/.codex-a"},
+                {"local": True, "codexHome": "~/.codex-b"},
+            ]))
+            with self.assertRaisesRegex(ValueError, "multiple local host"):
+                module.resolve_codex_home(root, inventory, {})
+
     def test_codex_agent_starts_and_rechecks_remote_control(self) -> None:
         agent = module.render_agent(
             "codex-app-server-ensure",

@@ -1,14 +1,29 @@
 import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { HOSTS, unavailableReport, type HostDefinition, type HostReport, type SshRoute } from "@/lib/hosts";
+import { configuredCodexHome, HOSTS, unavailableReport, type HostDefinition, type HostReport, type SshRoute } from "@/lib/hosts";
 
 const execFileAsync = promisify(execFile);
 const probe = readFile(path.join(process.cwd(), "scripts/probe.py"), "utf8");
 
 function shellQuote(value: string) {
   return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+function localCodexHome(host: HostDefinition) {
+  const configured = configuredCodexHome(host);
+  if (configured === "~") return os.homedir();
+  if (configured.startsWith("~/")) return path.join(os.homedir(), configured.slice(2));
+  return configured;
+}
+
+function remoteCodexHomeAssignment(host: HostDefinition) {
+  const configured = configuredCodexHome(host);
+  if (configured === "~") return 'CODEX_HOME="$HOME"';
+  if (configured.startsWith("~/")) return `CODEX_HOME="$HOME"/${shellQuote(configured.slice(2))}`;
+  return `CODEX_HOME=${shellQuote(configured)}`;
 }
 
 /** Try strict SSH routes sequentially and return the first successful result. */
@@ -37,7 +52,10 @@ async function collectOne(host: HostDefinition): Promise<HostReport> {
     let result;
     let connection: HostReport["connection"];
     if (host.local) {
-      result = await execFileAsync("python3", ["-c", script], options);
+      result = await execFileAsync("python3", ["-c", script], {
+        ...options,
+        env: { ...process.env, CODEX_HOME: localCodexHome(host) },
+      });
       connection = { transport: "local", target: null };
     } else {
       const attempt = await sshWithFailover(host.sshRoutes ?? [], (route) =>
@@ -50,7 +68,7 @@ async function collectOne(host: HostDefinition): Promise<HostReport> {
             "-o", "StrictHostKeyChecking=yes",
             "-o", `HostKeyAlias=${route.hostKeyAlias}`,
             route.target,
-            `python3 -c ${shellQuote(script)}`,
+            `${remoteCodexHomeAssignment(host)}; export CODEX_HOME; python3 -c ${shellQuote(script)}`,
           ],
           options,
         ),
@@ -67,7 +85,11 @@ async function collectOne(host: HostDefinition): Promise<HostReport> {
     };
     return {
       host: {
-        ...host,
+        slug: host.slug,
+        name: host.name,
+        os: host.os,
+        sshRoutes: host.sshRoutes,
+        local: host.local,
         localIp: data.ips?.localIp ?? host.localIp,
         tailscaleIp: data.ips?.tailscaleIp ?? host.tailscaleIp,
         zerotierIp: data.ips?.zerotierIp ?? host.zerotierIp,

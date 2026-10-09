@@ -25,8 +25,9 @@ npm run docs:check
 npm run docs:build
 python3 scripts/test_sync_codex_profile.py
 python3 -m unittest scripts/test_codex_control.py scripts/test_codex_recovery.py scripts/test_herdr_sessions.py
+python3 -m unittest scripts/test_codex_sync.py
 python3 -m unittest scripts/test_macos_launchagents.py
-python3 -m py_compile scripts/probe.py scripts/codex_control.py scripts/codex_recovery.py scripts/herdr_sessions.py scripts/sync_codex_profile.py ansible/inventory.py
+python3 -m py_compile scripts/probe.py scripts/codex_control.py scripts/codex_recovery.py scripts/codex_sync.py scripts/herdr_sessions.py scripts/sync_codex_profile.py ansible/inventory.py
 python3 scripts/check_public_snapshot.py
 cd ansible && ansible-playbook -i inventory.py --syntax-check playbooks/sync-linux-fleet.yml
 ```

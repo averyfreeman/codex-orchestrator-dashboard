@@ -9,5 +9,5 @@ export const metadata: Metadata = {
 
 /** Wrap dashboard routes in the document shell and global styles. */
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en"><body>{children}</body></html>;
+  return <html lang="en" data-theme="dark"><body>{children}</body></html>;
 }
