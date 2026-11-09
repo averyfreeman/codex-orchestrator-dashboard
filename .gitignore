@@ -55,3 +55,13 @@ next-env.d.ts
 __pycache__/
 **/__pycache__/
 .pytest_cache/
+
+# Local credentials and generated development files
+node_modules/
+.venv/
+.build/
+.uv-cache/
+.gocache/
+.ruff_cache/
+.next/
+.gradle/
